@@ -81,6 +81,12 @@ def cargar_datos_con_calculo(sheet_emp, sheet_sol):
     df_emp = pd.DataFrame(sheet_emp.get_all_records())
     df_sol = pd.DataFrame(sheet_sol.get_all_records())
     
+    # Si no hay solicitudes, crear DataFrame vacío con columnas correctas
+    if len(df_sol) == 0:
+        df_sol = pd.DataFrame(columns=['ID', 'EmpleadoID', 'RFC', 'Nombre Completo', 'Tipo Permiso', 
+                                       'Fecha Inicio', 'Fecha Fin', 'Dias Solicitados', 
+                                       'Motivo', 'Fecha Registro', 'Aprobado Por', 'Registrado Por'])
+    
     # CALCULAR DÍAS DISPONIBLES REALES
     for idx, emp in df_emp.iterrows():
         emp_id = emp['ID']
