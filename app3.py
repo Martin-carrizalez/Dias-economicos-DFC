@@ -370,6 +370,105 @@ def generar_alertas(df_empleados):
     
     return alertas
 
+def verificar_fechas_limite():
+    """Recordatorios de fechas límite para propuestas"""
+    hoy = datetime.now().date()
+    
+    # CALENDARIO ESTATAL
+    fechas_estatal = {
+        'Q03': datetime(2026, 1, 23).date(),
+        'Q04': datetime(2026, 2, 5).date(),
+        'Q05': datetime(2026, 2, 16).date(),
+        'Q06': datetime(2026, 3, 3).date(),
+        'Q07': datetime(2026, 3, 3).date(),
+        'Q08': datetime(2026, 3, 23).date(),
+        'Q09': datetime(2026, 4, 20).date(),
+        'Q10': datetime(2026, 5, 7).date(),
+        'Q11': datetime(2026, 5, 20).date(),
+        'Q12': datetime(2026, 6, 8).date(),
+        'Q13': datetime(2026, 6, 22).date(),
+        'Q14': datetime(2026, 7, 8).date(),
+        'Q15': datetime(2026, 7, 21).date(),
+        'Q16': datetime(2026, 8, 10).date(),
+        'Q17': datetime(2026, 8, 21).date(),
+        'Q18': datetime(2026, 9, 4).date(),
+        'Q19': datetime(2026, 9, 22).date(),
+        'Q20': datetime(2026, 10, 6).date(),
+        'Q21': datetime(2026, 10, 21).date(),
+        'Q22': datetime(2026, 11, 5).date(),
+    }
+    
+    # CALENDARIO FEDERALIZADO
+    fechas_federal = {
+        'Q02': datetime(2026, 1, 9).date(),
+        'Q03': datetime(2026, 1, 23).date(),
+        'Q04': datetime(2026, 2, 5).date(),
+        'Q05': datetime(2026, 2, 19).date(),
+        'Q06': datetime(2026, 3, 6).date(),
+        'Q07': datetime(2026, 3, 6).date(),
+        'Q08': datetime(2026, 4, 7).date(),
+        'Q09': datetime(2026, 4, 23).date(),
+        'Q10': datetime(2026, 5, 7).date(),
+        'Q11': datetime(2026, 5, 22).date(),
+        'Q12': datetime(2026, 6, 8).date(),
+        'Q13': datetime(2026, 6, 23).date(),
+        'Q14': datetime(2026, 6, 23).date(),
+        'Q15': datetime(2026, 6, 23).date(),
+        'Q16': datetime(2026, 8, 6).date(),
+        'Q17': datetime(2026, 8, 21).date(),
+        'Q18': datetime(2026, 9, 7).date(),
+        'Q19': datetime(2026, 9, 22).date(),
+        'Q20': datetime(2026, 10, 7).date(),
+        'Q21': datetime(2026, 10, 22).date(),
+        'Q22': datetime(2026, 11, 5).date(),
+        'Q23': datetime(2026, 11, 20).date(),
+        'Q24': datetime(2026, 11, 20).date(),
+    }
+    
+    alertas = {'criticas': [], 'proximas': [], 'futuras': []}
+    
+    # ESTATAL
+    for qna, fecha in fechas_estatal.items():
+        dias = (fecha - hoy).days
+        if dias < 0:
+            continue
+        
+        item = {
+            'sistema': 'ESTATAL',
+            'quincena': qna,
+            'fecha': fecha.strftime('%d/%m/%Y'),
+            'dias': dias
+        }
+        
+        if 0 <= dias <= 5:
+            alertas['criticas'].append(item)
+        elif 4 <= dias <= 15:
+            alertas['proximas'].append(item)
+        elif 16 <= dias <= 90:
+            alertas['futuras'].append(item)
+    
+    # FEDERALIZADO
+    for qna, fecha in fechas_federal.items():
+        dias = (fecha - hoy).days
+        if dias < 0:
+            continue
+        
+        item = {
+            'sistema': 'FEDERAL',
+            'quincena': qna,
+            'fecha': fecha.strftime('%d/%m/%Y'),
+            'dias': dias
+        }
+        
+        if 0 <= dias <= 5:
+            alertas['criticas'].append(item)
+        elif 4 <= dias <= 15:
+            alertas['proximas'].append(item)
+        elif 16 <= dias <= 90:
+            alertas['futuras'].append(item)
+    
+    return alertas
+
 # ============= LOGIN =============
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -391,7 +490,15 @@ if not st.session_state['logged_in']:
                 st.session_state['logged_in'] = True
                 st.session_state['usuario'] = usuario
                 st.session_state['nombre_usuario'] = nombre
-                st.rerun()
+                
+                # Verificar alertas críticas
+                fechas_limite_login = verificar_fechas_limite()
+                
+                if fechas_limite_login['criticas']:
+                    st.session_state['mostrar_alerta_login'] = True
+                    st.session_state['alertas_criticas'] = fechas_limite_login['criticas']
+                
+                st.rerun()  
             else:
                 st.error("❌ Usuario o contraseña incorrectos")
     st.stop()
@@ -408,6 +515,22 @@ with col2:
         st.rerun()
 
 st.markdown("---")
+
+# Mostrar alerta de login si hay propuestas críticas
+if st.session_state.get('mostrar_alerta_login', False):
+    with st.container():
+        st.error("### ⚠️ RECUERDA FECHAS LÍMITE PARA CAPTURA EN RH ⚠️")
+        
+        for item in st.session_state.get('alertas_criticas', []):
+            st.warning(f"🚨 {item['sistema']} {item['quincena']}: Faltan {item['dias']} días - Límite: {item['fecha']}")
+        
+        col1, col2 = st.columns([3, 1])
+        with col2:
+            if st.button("✅ Entendido", type="primary"):
+                st.session_state['mostrar_alerta_login'] = False
+                st.rerun()
+        
+        st.markdown("---")
 
 # Conectar
 client = conectar_sheets()
@@ -444,6 +567,7 @@ if len(df_pendientes) == 0:
 with st.sidebar:
     st.header("🔔 Alertas y Notificaciones")
     
+    # Alertas de días disponibles
     if len(df_empleados) > 0:
         alertas = generar_alertas(df_empleados)
         
@@ -456,7 +580,19 @@ with st.sidebar:
                 else:
                     st.info(alerta['mensaje'])
         else:
-            st.success("✅ No hay alertas pendientes")
+            st.success("✅ No hay alertas de días")
+    
+    # Alertas de propuestas CRÍTICAS
+    st.markdown("---")
+    st.markdown("**📋 Propuestas Urgentes**")
+    
+    fechas_limite = verificar_fechas_limite()
+    
+    if fechas_limite['criticas']:
+        for item in fechas_limite['criticas']:
+            st.error(f"🚨 {item['sistema']} {item['quincena']}: {item['dias']} días ({item['fecha']})")
+    else:
+        st.success("✅ Sin propuestas urgentes")
     
     st.markdown("---")
     st.markdown("**📊 Resumen General**")
@@ -464,15 +600,16 @@ with st.sidebar:
         st.metric("Total Empleados", len(df_empleados))
         st.metric("Solicitudes Registradas", len(df_solicitudes))
         dias_promedio = df_empleados['DIAS_REALES'].mean()
-        st.metric("Días Disponibles (Promedio)", f"{dias_promedio:.1f}")
+        st.metric("Días Disponibles (Promedio)", int(dias_promedio))
 
 # TABS PRINCIPALES
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
     "📝 Registrar Solicitud",
     "🏥 Incapacidades",
     "👥 Ver Empleados", 
     "📊 Estatus Individual",
     "📄 Reportes",
+    "🔔 Recordatorios",  # NUEVO
     "📋 Normativa"
 ])
 
@@ -560,6 +697,47 @@ with tab1:
         - **Centro de Trabajo:** {emp_info.get('CENTRO DE TRABAJO', 'N/A')}
         - **Días Disponibles:** **{emp_info['DIAS_REALES']}/9**
         """)
+        # Verificar si hay concentración de personal
+if fechas_procesadas and tipo == 'economico':
+    empleados_ausentes = []
+    
+    for fecha_check in fechas_procesadas:
+        # Contar cuántos empleados estarán ausentes ese día
+        for _, sol in df_solicitudes.iterrows():
+            sol_inicio = pd.to_datetime(sol['Fecha Inicio'])
+            sol_fin = pd.to_datetime(sol['Fecha Fin'])
+            
+            if sol_inicio.date() <= fecha_check.date() <= sol_fin.date():
+                empleados_ausentes.append({
+                    'fecha': fecha_check.strftime('%d/%m/%Y'),
+                    'nombre': sol['Nombre Completo'],
+                    'tipo': sol['Tipo Permiso']
+                })
+    
+    # Contar por fecha
+    from collections import Counter
+    fechas_count = Counter([e['fecha'] for e in empleados_ausentes])
+    
+    # Alertar si alguna fecha tiene 5+
+    for fecha, count in fechas_count.items():
+        if count >= 4:  # 4 existentes + 1 nuevo = 5 total
+            st.error(f"""
+            🚨 **ALERTA: CONCENTRACIÓN DE PERSONAL**
+            
+            El **{fecha}** ya tienen permiso **{count} empleados**
+            
+            Si registras esta solicitud serán **{count + 1} empleados ausentes**
+            
+            ⚠️ **IMPACTO OPERATIVO:** Posible desabasto de personal
+            """)
+            
+            # Mostrar quiénes estarán ausentes
+            ausentes_fecha = [e for e in empleados_ausentes if e['fecha'] == fecha]
+            for aus in ausentes_fecha[:5]:
+                st.warning(f"• {aus['nombre']} - {aus['tipo']}")
+            
+            if len(ausentes_fecha) > 5:
+                st.warning(f"... y {len(ausentes_fecha) - 5} más")
         
         st.markdown("---")
         
@@ -1099,8 +1277,56 @@ with tab5:
                 dias_usados = df_solicitudes[df_solicitudes['Fecha_Reg'].dt.year == datetime.now().year]['Dias Solicitados'].sum()
                 st.metric("Días Usados (2025)", int(dias_usados))
 
-# TAB 6: NORMATIVA
+# TAB 6: RECORDATORIOS
 with tab6:
+    st.header("🔔 Recordatorios de Fechas Límite")
+    
+    st.info("📅 Fechas límite para entregar propuestas de pago a RH Central")
+    
+    fechas_limite_tab = verificar_fechas_limite()
+    
+    # CRÍTICAS
+    if fechas_limite_tab['criticas']:
+        st.markdown("### 🚨 CRÍTICAS (0-3 días)")
+        for item in fechas_limite_tab['criticas']:
+            col1, col2, col3, col4 = st.columns([2, 1, 2, 1])
+            with col1:
+                st.error(f"**{item['sistema']} {item['quincena']}**")
+            with col2:
+                st.metric("Días", item['dias'])
+            with col3:
+                st.error(f"Límite: {item['fecha']}")
+            with col4:
+                st.error("⚠️ URGENTE")
+        st.markdown("---")
+    
+    # PRÓXIMAS
+    if fechas_limite_tab['proximas']:
+        st.markdown("### ⚠️ PRÓXIMAS (4-15 días)")
+        for item in fechas_limite_tab['proximas']:
+            col1, col2, col3 = st.columns([2, 1, 2])
+            with col1:
+                st.warning(f"**{item['sistema']} {item['quincena']}**")
+            with col2:
+                st.metric("Días", item['dias'])
+            with col3:
+                st.warning(f"Límite: {item['fecha']}")
+        st.markdown("---")
+    
+    # FUTURAS
+    if fechas_limite_tab['futuras']:
+        st.markdown("### ℹ️ FUTURAS (16-90 días)")
+        for item in fechas_limite_tab['futuras']:
+            col1, col2, col3 = st.columns([2, 1, 2])
+            with col1:
+                st.info(f"**{item['sistema']} {item['quincena']}**")
+            with col2:
+                st.metric("Días", item['dias'])
+            with col3:
+                st.info(f"Límite: {item['fecha']}")
+
+# TAB 7: NORMATIVA
+with tab7:
     st.header("📋 Normativa Aplicable")
     
     st.info("""
