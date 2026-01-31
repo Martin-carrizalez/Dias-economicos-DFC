@@ -474,7 +474,7 @@ if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
 
 if not st.session_state['logged_in']:
-    st.title("🔐 Sistema de Gestión de Días Económicos")
+    st.title("🔐 Sistema de Gestión de RH DFC")
     st.markdown("**Dirección de Formación Continua** - Secretaría de Educación Jalisco")
     st.markdown("---")
     
@@ -504,7 +504,7 @@ if not st.session_state['logged_in']:
     st.stop()
 
 # ============= MAIN APP =============
-st.title("📅 Sistema de Gestión de Días Económicos")
+st.title("📅 Sistema de Gestión de RH DFC")
 st.markdown("**Dirección de Formación Continua** - Secretaría de Educación Jalisco")
 
 col1, col2 = st.columns([4,1])
