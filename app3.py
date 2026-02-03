@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import gspread
 from google.oauth2.service_account import Credentials
 import io
@@ -372,7 +372,8 @@ def generar_alertas(df_empleados):
 
 def verificar_fechas_limite():
     """Recordatorios de fechas límite para propuestas"""
-    hoy = datetime.now().date()
+    zona_mexico = timezone(timedelta(hours=-6))
+    hoy = datetime.now(zona_mexico).date()
     
     # CALENDARIO ESTATAL
     fechas_estatal = {
