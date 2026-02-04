@@ -487,16 +487,15 @@ def verificar_fechas_limite():
 def generar_constancias_word(df_constancias, empleados_seleccionados, num_quincena, año, fecha_elaboracion):
     """Genera documento Word con constancias conservando formato e imágenes"""
     from docx import Document
+    from docx.oxml import parse_xml
+    from docx.oxml.ns import nsdecls
     import os
-    import re
     
-    # Ruta de la plantilla
     plantilla_path = os.path.join(os.path.dirname(__file__), 'templates', 'FORMATO_CONSTANCIA_DE_SERVICIO.docx')
     
     if not os.path.exists(plantilla_path):
         raise FileNotFoundError(f"No se encontró la plantilla en: {plantilla_path}")
     
-    # Formatear fecha en español
     meses = {
         1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
         5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
@@ -504,9 +503,11 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
     }
     fecha_texto = f"{fecha_elaboracion.day} de {meses[fecha_elaboracion.month]} de {fecha_elaboracion.year}"
     
-    doc_final = None
+    # Lista para guardar documentos individuales
+    docs = []
     
-    for idx, nombre_empleado in enumerate(empleados_seleccionados):
+    for nombre_empleado in empleados_seleccionados:
+        # Abrir plantilla NUEVA para cada empleado
         doc = Document(plantilla_path)
         emp = df_constancias[df_constancias['Nombre Completo'] == nombre_empleado].iloc[0]
         
@@ -535,64 +536,52 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
             '<<HOJA>>': str(int(emp['Hoja']))
         }
         
-        # Función para reemplazar en un párrafo completo
-        def reemplazar_en_paragrafo(paragraph, reemplazos):
-            # Obtener texto completo
-            texto_completo = paragraph.text
-            
-            # Verificar si hay marcadores
-            tiene_marcador = False
-            for marcador in reemplazos.keys():
-                if marcador in texto_completo:
-                    tiene_marcador = True
-                    texto_completo = texto_completo.replace(marcador, reemplazos[marcador])
-            
-            # Si se hizo algún reemplazo, actualizar el párrafo
-            if tiene_marcador:
-                # Guardar formato del primer run
-                formato = None
-                if paragraph.runs:
-                    formato = {
-                        'bold': paragraph.runs[0].bold,
-                        'italic': paragraph.runs[0].italic,
-                        'font_name': paragraph.runs[0].font.name,
-                        'font_size': paragraph.runs[0].font.size
-                    }
-                
-                # Limpiar todos los runs
-                for run in paragraph.runs:
-                    run.text = ''
-                
-                # Crear nuevo run con texto reemplazado
-                new_run = paragraph.runs[0] if paragraph.runs else paragraph.add_run()
-                new_run.text = texto_completo
-                
-                # Restaurar formato
-                if formato:
-                    new_run.bold = formato['bold']
-                    new_run.italic = formato['italic']
-                    if formato['font_name']:
-                        new_run.font.name = formato['font_name']
-                    if formato['font_size']:
-                        new_run.font.size = formato['font_size']
-        
         # Reemplazar en párrafos
         for paragraph in doc.paragraphs:
-            reemplazar_en_paragrafo(paragraph, reemplazos)
+            texto_completo = paragraph.text
+            for marcador, valor in reemplazos.items():
+                if marcador in texto_completo:
+                    texto_completo = texto_completo.replace(marcador, valor)
+            
+            # Actualizar el texto
+            if texto_completo != paragraph.text:
+                for run in paragraph.runs:
+                    run.text = ''
+                if paragraph.runs:
+                    paragraph.runs[0].text = texto_completo
+                else:
+                    paragraph.add_run(texto_completo)
         
         # Reemplazar en tablas
         for table in doc.tables:
             for row in table.rows:
                 for cell in row.cells:
                     for paragraph in cell.paragraphs:
-                        reemplazar_en_paragrafo(paragraph, reemplazos)
+                        texto_completo = paragraph.text
+                        for marcador, valor in reemplazos.items():
+                            if marcador in texto_completo:
+                                texto_completo = texto_completo.replace(marcador, valor)
+                        
+                        if texto_completo != paragraph.text:
+                            for run in paragraph.runs:
+                                run.text = ''
+                            if paragraph.runs:
+                                paragraph.runs[0].text = texto_completo
+                            else:
+                                paragraph.add_run(texto_completo)
         
-        if idx == 0:
-            doc_final = doc
-        else:
-            doc_final.add_page_break()
-            for element in doc.element.body:
-                doc_final.element.body.append(element)
+        docs.append(doc)
+    
+    # Combinar documentos
+    doc_final = docs[0]
+    
+    for doc in docs[1:]:
+        # Agregar salto de página
+        doc_final.add_page_break()
+        
+        # Copiar contenido
+        for element in doc.element.body:
+            doc_final.element.body.append(element)
     
     output_path = os.path.join(os.path.dirname(__file__), f'Constancias_Q{num_quincena}_{año}.docx')
     doc_final.save(output_path)
