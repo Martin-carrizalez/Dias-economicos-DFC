@@ -96,10 +96,24 @@ def inicializar_sheets(client):
                 'Descripcion', 'Quincena', 'Año', 'Estado', 'Fecha_Registro', 
                 'Fecha_Completado', 'Completado_Por'
             ]])
-        
-        return spreadsheet, sheet_empleados, sheet_solicitudes, sheet_incapacidades, sheet_pendientes
-    except:
-        return None, None, None, None, None
+
+        try:
+            sheet_constancias = spreadsheet.worksheet("Constancias")
+        except gspread.WorksheetNotFound:
+            sheet_constancias = spreadsheet.add_worksheet(title="Constancias", rows=100, cols=20)
+            sheet_constancias.update('A1:Q1', [[
+                'Hoja', 'Nombre Completo', 'Apellido paterno', 'Apellido Materno', 'Nombre(s)',
+                'N.C.T. Adscripción', 'C.C.T. ADSCRIPCIÓN', 'Clave Presupuestal', 'RFC',
+                'INGRESOA LA SEJ', 'Nombramiento', 'Descripción de puesto', 
+                'Se desempeña en', 'Subsitema', 'HORARIO', 'TEL. PERSONAL', 'TEL. ext.'
+            ]])
+
+        return spreadsheet, sheet_empleados, sheet_solicitudes, sheet_incapacidades, sheet_pendientes, sheet_constancias
+    except Exception as e:
+        st.error(f"ERROR en inicializar_sheets: {str(e)}")
+        import traceback
+        st.code(traceback.format_exc())
+        return None, None, None, None, None, None
 
 def cargar_datos_con_calculo(sheet_emp, sheet_sol):
     """Carga datos y CALCULA días disponibles en tiempo real"""
@@ -470,6 +484,121 @@ def verificar_fechas_limite():
     
     return alertas
 
+def generar_constancias_word(df_constancias, empleados_seleccionados, num_quincena, año, fecha_elaboracion):
+    """Genera documento Word con constancias conservando formato e imágenes"""
+    from docx import Document
+    import os
+    import re
+    
+    # Ruta de la plantilla
+    plantilla_path = os.path.join(os.path.dirname(__file__), 'templates', 'FORMATO_CONSTANCIA_DE_SERVICIO.docx')
+    
+    if not os.path.exists(plantilla_path):
+        raise FileNotFoundError(f"No se encontró la plantilla en: {plantilla_path}")
+    
+    # Formatear fecha en español
+    meses = {
+        1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
+        5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
+        9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
+    }
+    fecha_texto = f"{fecha_elaboracion.day} de {meses[fecha_elaboracion.month]} de {fecha_elaboracion.year}"
+    
+    doc_final = None
+    
+    for idx, nombre_empleado in enumerate(empleados_seleccionados):
+        doc = Document(plantilla_path)
+        emp = df_constancias[df_constancias['Nombre Completo'] == nombre_empleado].iloc[0]
+        
+        tel_personal = str(emp['TEL. PERSONAL'])
+        if '.' in tel_personal:
+            try:
+                tel_personal = f"{int(float(tel_personal)):010d}"
+            except:
+                pass
+        
+        reemplazos = {
+            '<<QUINCENA>>': str(num_quincena),
+            '<<AÑO>>': str(año),
+            '<<FECHA>>': fecha_texto,
+            '<<APELLIDO_PATERNO>>': str(emp['Apellido paterno']),
+            '<<APELLIDO_MATERNO>>': str(emp['Apellido Materno']),
+            '<<NOMBRE>>': str(emp['Nombre(s)']),
+            '<<RFC>>': str(emp['RFC']),
+            '<<FECHA_INGRESO>>': str(emp['INGRESOA LA SEJ']),
+            '<<SE_DESEMPENA_EN>>': str(emp['Se desempeña en']),
+            '<<DESCRIPCION_PUESTO>>': str(emp['Descripción de puesto']),
+            '<<CCT>>': str(emp['C.C.T. ADSCRIPCIÓN']),
+            '<<CLAVE_PRESUPUESTAL>>': str(emp['Clave Presupuestal']),
+            '<<TEL_PERSONAL>>': tel_personal,
+            '<<TEL_EXT>>': str(emp['TEL. ext.']),
+            '<<HOJA>>': str(int(emp['Hoja']))
+        }
+        
+        # Función para reemplazar en un párrafo completo
+        def reemplazar_en_paragrafo(paragraph, reemplazos):
+            # Obtener texto completo
+            texto_completo = paragraph.text
+            
+            # Verificar si hay marcadores
+            tiene_marcador = False
+            for marcador in reemplazos.keys():
+                if marcador in texto_completo:
+                    tiene_marcador = True
+                    texto_completo = texto_completo.replace(marcador, reemplazos[marcador])
+            
+            # Si se hizo algún reemplazo, actualizar el párrafo
+            if tiene_marcador:
+                # Guardar formato del primer run
+                formato = None
+                if paragraph.runs:
+                    formato = {
+                        'bold': paragraph.runs[0].bold,
+                        'italic': paragraph.runs[0].italic,
+                        'font_name': paragraph.runs[0].font.name,
+                        'font_size': paragraph.runs[0].font.size
+                    }
+                
+                # Limpiar todos los runs
+                for run in paragraph.runs:
+                    run.text = ''
+                
+                # Crear nuevo run con texto reemplazado
+                new_run = paragraph.runs[0] if paragraph.runs else paragraph.add_run()
+                new_run.text = texto_completo
+                
+                # Restaurar formato
+                if formato:
+                    new_run.bold = formato['bold']
+                    new_run.italic = formato['italic']
+                    if formato['font_name']:
+                        new_run.font.name = formato['font_name']
+                    if formato['font_size']:
+                        new_run.font.size = formato['font_size']
+        
+        # Reemplazar en párrafos
+        for paragraph in doc.paragraphs:
+            reemplazar_en_paragrafo(paragraph, reemplazos)
+        
+        # Reemplazar en tablas
+        for table in doc.tables:
+            for row in table.rows:
+                for cell in row.cells:
+                    for paragraph in cell.paragraphs:
+                        reemplazar_en_paragrafo(paragraph, reemplazos)
+        
+        if idx == 0:
+            doc_final = doc
+        else:
+            doc_final.add_page_break()
+            for element in doc.element.body:
+                doc_final.element.body.append(element)
+    
+    output_path = os.path.join(os.path.dirname(__file__), f'Constancias_Q{num_quincena}_{año}.docx')
+    doc_final.save(output_path)
+    
+    return output_path
+
 # ============= LOGIN =============
 if 'logged_in' not in st.session_state:
     st.session_state['logged_in'] = False
@@ -533,36 +662,66 @@ if st.session_state.get('mostrar_alerta_login', False):
         
         st.markdown("---")
 
-# Conectar
-client = conectar_sheets()
-if not client:
-    st.error("⚠️ No se pudo conectar a Google Sheets")
-    st.stop()
+# Cargar datos solo una vez al inicio
+if 'df_empleados' not in st.session_state:
+    client = conectar_sheets()
+    if client:
+        try:
+            spreadsheet = client.open("Dias_Economicos_Formacion_Continua")
+            
+            # Leer TODAS las hojas y convertir a DataFrames
+            st.session_state['df_empleados'] = pd.DataFrame(spreadsheet.worksheet("Empleados").get_all_records())
+            st.session_state['df_solicitudes'] = pd.DataFrame(spreadsheet.worksheet("Solicitudes").get_all_records())
+            
+            # Incapacidades con columnas por defecto
+            df_incap = pd.DataFrame(spreadsheet.worksheet("Incapacidades").get_all_records())
+            if len(df_incap) == 0:
+                df_incap = pd.DataFrame(columns=['ID', 'EmpleadoID', 'RFC', 'Nombre Completo', 'Correo Empleado',
+                                                  'Telefono Contacto', 'Numero Incapacidad', 'Fecha Inicio', 
+                                                  'Fecha Termino', 'Dias Totales', 'Tipo Incapacidad', 'Excede Dias',
+                                                  'Dias Enfermedad General', 'Dias Maternidad', 'Dias Riesgo Trabajo',
+                                                  'Dias Posible Riesgo', 'Mes Correspondiente', 'Estado', 'Registrado Por'])
+            st.session_state['df_incapacidades'] = df_incap
+            
+            # Pendientes con columnas por defecto
+            df_pend = pd.DataFrame(spreadsheet.worksheet("Pendientes_Empleado").get_all_records())
+            if len(df_pend) == 0:
+                df_pend = pd.DataFrame(columns=['ID', 'EmpleadoID', 'RFC', 'Nombre Completo', 'Tipo_Pendiente',
+                                                'Descripcion', 'Quincena', 'Año', 'Estado', 'Fecha_Registro',
+                                                'Fecha_Completado', 'Completado_Por'])
+            st.session_state['df_pendientes'] = df_pend
+            
+            st.session_state['df_constancias'] = pd.DataFrame(spreadsheet.worksheet("Constancias").get_all_records())
+            
+            # Guardar el cliente para escrituras
+            st.session_state['client'] = client
+            st.session_state['spreadsheet_name'] = "Dias_Economicos_Formacion_Continua"
+            
+        except Exception as e:
+            st.error(f"Error al cargar datos: {str(e)}")
+            st.stop()
+    else:
+        st.error("No se pudo conectar a Google Sheets")
+        st.stop()
 
-spreadsheet, sheet_emp, sheet_sol, sheet_incap, sheet_pend = inicializar_sheets(client)
-if not spreadsheet:
-    st.error("No se pudieron inicializar las hojas")
-    st.stop()
+# Usar los DataFrames desde session_state
+df_empleados = st.session_state['df_empleados'].copy()
+df_solicitudes = st.session_state['df_solicitudes'].copy()
+df_incapacidades = st.session_state['df_incapacidades'].copy()
+df_pendientes = st.session_state['df_pendientes'].copy()
+df_constancias = st.session_state['df_constancias'].copy()
 
-
-# Cargar datos
-df_empleados, df_solicitudes = cargar_datos_con_calculo(sheet_emp, sheet_sol)
-
-# Cargar incapacidades
-df_incapacidades = pd.DataFrame(sheet_incap.get_all_records())
-if len(df_incapacidades) == 0:
-    df_incapacidades = pd.DataFrame(columns=['ID', 'EmpleadoID', 'RFC', 'Nombre Completo', 'Correo Empleado',
-                                              'Telefono Contacto', 'Numero Incapacidad', 'Fecha Inicio', 
-                                              'Fecha Termino', 'Dias Totales', 'Tipo Incapacidad', 'Excede Dias',
-                                              'Dias Enfermedad General', 'Dias Maternidad', 'Dias Riesgo Trabajo',
-                                              'Dias Posible Riesgo', 'Mes Correspondiente', 'Estado', 'Registrado Por'])
-
-# Cargar pendientes
-df_pendientes = pd.DataFrame(sheet_pend.get_all_records())
-if len(df_pendientes) == 0:
-    df_pendientes = pd.DataFrame(columns=['ID', 'EmpleadoID', 'RFC', 'Nombre Completo', 'Tipo_Pendiente',
-                                          'Descripcion', 'Quincena', 'Año', 'Estado', 'Fecha_Registro',
-                                          'Fecha_Completado', 'Completado_Por'])
+# Calcular días disponibles
+for idx, emp in df_empleados.iterrows():
+    emp_id = emp['ID']
+    solicitudes_emp = df_solicitudes[df_solicitudes['EmpleadoID'] == emp_id]
+    
+    dias_usados = 0
+    for _, sol in solicitudes_emp.iterrows():
+        if sol['Tipo Permiso'] == 'economico':
+            dias_usados += int(sol['Dias Solicitados'])
+    
+    df_empleados.at[idx, 'DIAS_REALES'] = 9 - dias_usados
 
 # SIDEBAR: Alertas
 with st.sidebar:
@@ -604,13 +763,14 @@ with st.sidebar:
         st.metric("Días Disponibles (Promedio)", int(dias_promedio))
 
 # TABS PRINCIPALES
-tab1, tab2, tab3, tab4, tab5, tab6, tab7 = st.tabs([
+tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📝 Registrar Solicitud",
     "🏥 Incapacidades",
     "👥 Ver Empleados", 
     "📊 Estatus Individual",
     "📄 Reportes",
-    "🔔 Recordatorios",  # NUEVO
+    "🔔 Recordatorios",
+    "📋 Gestión Documental",  # NUEVO
     "📋 Normativa"
 ])
 
@@ -776,7 +936,18 @@ if fechas_procesadas and tipo == 'economico':
                         st.session_state['nombre_usuario']
                     ]
                     
+                    # RECONECTAR para escribir
+                    client = st.session_state['client']
+                    spreadsheet = client.open(st.session_state['spreadsheet_name'])
+                    sheet_sol = spreadsheet.worksheet("Solicitudes")
+                    sheet_emp = spreadsheet.worksheet("Empleados")
+
+                    # ESCRIBIR
                     sheet_sol.append_row(nueva_fila)
+
+                    # Actualizar session_state
+                    st.session_state['df_solicitudes'] = pd.DataFrame(sheet_sol.get_all_records())
+                    st.session_state['df_empleados'] = pd.DataFrame(sheet_emp.get_all_records())
                     dias_restantes = int(emp_info['DIAS_REALES'] - dias) if tipo == 'economico' else int(emp_info['DIAS_REALES'])
                     
                     # CONFIRMACIÓN
@@ -947,8 +1118,17 @@ with tab2:
                 st.session_state['nombre_usuario']
             ]
             
+            # RECONECTAR para escribir
+            client = st.session_state['client']
+            spreadsheet = client.open(st.session_state['spreadsheet_name'])
+            sheet_incap = spreadsheet.worksheet("Incapacidades")
+
+            # ESCRIBIR
             sheet_incap.append_row(nueva_incap)
-            
+
+            # Actualizar session_state
+            st.session_state['df_incapacidades'] = pd.DataFrame(sheet_incap.get_all_records())
+                        
             st.success("# ✅ ¡INCAPACIDAD REGISTRADA!")
             st.balloons()
             st.success(f"### 📋 Folio: {len(df_incapacidades) + 1}")
@@ -1087,11 +1267,20 @@ with tab4:
                             """)
                         with col_p2:
                             if st.button("✅ Completar", key=f"comp_{pend['ID']}"):
+                                # RECONECTAR para escribir
+                                client = st.session_state['client']
+                                spreadsheet = client.open(st.session_state['spreadsheet_name'])
+                                sheet_pend = spreadsheet.worksheet("Pendientes_Empleado")
+                                
                                 # Marcar como completado
                                 cell = sheet_pend.find(str(pend['ID']))
                                 sheet_pend.update_cell(cell.row, 9, 'Completado')
                                 sheet_pend.update_cell(cell.row, 11, datetime.now().strftime('%Y-%m-%d'))
                                 sheet_pend.update_cell(cell.row, 12, st.session_state['nombre_usuario'])
+                                
+                                # Actualizar session_state
+                                st.session_state['df_pendientes'] = pd.DataFrame(sheet_pend.get_all_records())
+                                
                                 st.success("✅ Marcado como completado")
                                 st.rerun()
                 else:
@@ -1140,7 +1329,17 @@ with tab4:
                                 '',
                                 ''
                             ]
+                            # RECONECTAR para escribir
+                            client = st.session_state['client']
+                            spreadsheet = client.open(st.session_state['spreadsheet_name'])
+                            sheet_pend = spreadsheet.worksheet("Pendientes_Empleado")
+
+                            # ESCRIBIR
                             sheet_pend.append_row(nuevo_pend)
+
+                            # Actualizar session_state
+                            st.session_state['df_pendientes'] = pd.DataFrame(sheet_pend.get_all_records())
+
                             st.success("✅ Pendiente registrado")
                             st.rerun()
                         else:
@@ -1326,8 +1525,93 @@ with tab6:
             with col3:
                 st.info(f"Límite: {item['fecha']}")
 
-# TAB 7: NORMATIVA
+# TAB 7: GESTIÓN DOCUMENTAL
 with tab7:
+    st.header("📋 Gestión Documental")
+    
+    tipo_doc = st.selectbox(
+        "Tipo de documento",
+        ["📄 Constancias", "🚗 Comisiones (próximamente)", "📋 Propuestas/Oficios (próximamente)"],
+        help="Selecciona el tipo de documento a generar"
+    )
+    
+    if tipo_doc == "📄 Constancias":
+        st.markdown("---")
+        st.subheader("Generador de Constancias de Servicio")
+        
+        # Usar datos ya cargados desde session_state
+        df_constancias = st.session_state['df_constancias']
+        
+        if len(df_constancias) == 0:
+            st.error("❌ No hay datos de empleados en la hoja Constancias")
+            st.stop()
+        
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            num_quincena = st.number_input("Número de Quincena", min_value=1, max_value=24, value=24)
+        
+        with col2:
+            año_const = st.number_input("Año", min_value=2024, max_value=2030, value=2025)
+        
+        with col3:
+            fecha_const = st.date_input("Fecha de elaboración", value=datetime.now())
+        
+        st.markdown("---")
+        st.markdown("**Seleccionar empleados para generar constancias:**")
+        
+        # Lista de empleados
+        lista_empleados = df_constancias['Nombre Completo'].tolist()
+        
+        empleados_seleccionados = st.multiselect(
+            "Empleados",
+            options=lista_empleados,
+            default=lista_empleados,
+            help="Por defecto están todos seleccionados. Puedes deseleccionar los que no necesites."
+        )
+        
+        st.info(f"📊 **{len(empleados_seleccionados)} empleados seleccionados** de {len(lista_empleados)} totales")
+        
+        if st.button("✅ Generar Constancias", type="primary", use_container_width=True):
+            if not empleados_seleccionados:
+                st.error("❌ Debes seleccionar al menos un empleado")
+            else:
+                with st.spinner("Generando constancias..."):
+                    try:
+                        # Filtrar df_constancias solo con empleados seleccionados
+                        df_filtrado = df_constancias[df_constancias['Nombre Completo'].isin(empleados_seleccionados)].copy()
+                        
+                        # Generar documento UNA SOLA VEZ con todos los datos
+                        output_path = generar_constancias_word(
+                            df_filtrado,
+                            empleados_seleccionados,
+                            num_quincena,
+                            año_const,
+                            fecha_const
+                        )
+                        
+                        st.success(f"✅ Constancias generadas exitosamente para {len(empleados_seleccionados)} empleados")
+                        
+                        # Botón de descarga
+                        with open(output_path, 'rb') as f:
+                            st.download_button(
+                                label="📥 Descargar Constancias",
+                                data=f,
+                                file_name=f"Constancias_Q{num_quincena}_{año_const}.docx",
+                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                use_container_width=True
+                            )
+                    
+                    except Exception as e:
+                        st.error(f"❌ Error al generar constancias: {str(e)}")
+                        st.error("Verifica que la plantilla Word esté en la ubicación correcta")
+    
+    else:
+        st.info("🚧 Esta funcionalidad estará disponible próximamente")
+
+
+# TAB 8: NORMATIVA
+with tab8:
     st.header("📋 Normativa Aplicable")
     
     st.info("""
