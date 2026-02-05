@@ -572,19 +572,20 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
         
         docs.append(doc)
     
-    # Combinar documentos
-    doc_final = docs[0]
+    # Combinar documentos con docxcompose
+    from docxcompose.composer import Composer
+    
+    # Agregar salto de página al final de cada doc (excepto el último)
+    for i, doc in enumerate(docs[:-1]):  # Todos excepto el último
+        doc.add_page_break()
+    
+    composer = Composer(docs[0])
     
     for doc in docs[1:]:
-        # Agregar salto de página
-        doc_final.add_page_break()
-        
-        # Copiar contenido
-        for element in doc.element.body:
-            doc_final.element.body.append(element)
+        composer.append(doc)
     
     output_path = os.path.join(os.path.dirname(__file__), f'Constancias_Q{num_quincena}_{año}.docx')
-    doc_final.save(output_path)
+    composer.save(output_path)
     
     return output_path
 
@@ -660,10 +661,14 @@ if 'df_empleados' not in st.session_state:
             
             # Leer TODAS las hojas y convertir a DataFrames
             st.session_state['df_empleados'] = pd.DataFrame(spreadsheet.worksheet("Empleados").get_all_records())
+            st.write("✅ Empleados OK")  # ← AGREGAR
+            
             st.session_state['df_solicitudes'] = pd.DataFrame(spreadsheet.worksheet("Solicitudes").get_all_records())
+            st.write("✅ Solicitudes OK")  # ← AGREGAR
             
             # Incapacidades con columnas por defecto
             df_incap = pd.DataFrame(spreadsheet.worksheet("Incapacidades").get_all_records())
+            st.write("✅ Incapacidades OK")  # ← AGREGAR
             if len(df_incap) == 0:
                 df_incap = pd.DataFrame(columns=['ID', 'EmpleadoID', 'RFC', 'Nombre Completo', 'Correo Empleado',
                                                   'Telefono Contacto', 'Numero Incapacidad', 'Fecha Inicio', 
@@ -674,6 +679,7 @@ if 'df_empleados' not in st.session_state:
             
             # Pendientes con columnas por defecto
             df_pend = pd.DataFrame(spreadsheet.worksheet("Pendientes_Empleado").get_all_records())
+            st.write("✅ Pendientes OK")  # ← AGREGAR
             if len(df_pend) == 0:
                 df_pend = pd.DataFrame(columns=['ID', 'EmpleadoID', 'RFC', 'Nombre Completo', 'Tipo_Pendiente',
                                                 'Descripcion', 'Quincena', 'Año', 'Estado', 'Fecha_Registro',
@@ -681,6 +687,7 @@ if 'df_empleados' not in st.session_state:
             st.session_state['df_pendientes'] = df_pend
             
             st.session_state['df_constancias'] = pd.DataFrame(spreadsheet.worksheet("Constancias").get_all_records())
+            st.write("✅ Constancias OK")  # ← AGREGAR
             
             # Guardar el cliente para escrituras
             st.session_state['client'] = client
