@@ -591,26 +591,35 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
     return output_path
 
 def convertir_word_a_pdf(word_path):
-    """Convierte Word a PDF usando unoconv"""
+    """Convierte Word a PDF usando LibreOffice directamente"""
     import subprocess
     import os
     
+    # Definir ruta de salida
+    output_dir = os.path.dirname(os.path.abspath(word_path))
     pdf_path = word_path.replace('.docx', '.pdf')
     
     try:
-        # Usar unoconv (funciona con LibreOffice en Cloud)
-        result = subprocess.run([
-            'unoconv', '-f', 'pdf', '-o', pdf_path, word_path
-        ], capture_output=True, text=True, timeout=60)
+        # Comando directo de LibreOffice (lowriter es más específico para docs)
+        comando = [
+            'lowriter',
+            '--headless',
+            '--convert-to', 'pdf',
+            '--outdir', output_dir,
+            os.path.abspath(word_path)
+        ]
         
-        if result.returncode == 0 and os.path.exists(pdf_path):
+        # Ejecutar con timeout de 30 segundos
+        result = subprocess.run(comando, capture_output=True, text=True, timeout=30)
+        
+        if os.path.exists(pdf_path):
             return pdf_path
         else:
-            st.warning(f"⚠️ Error: {result.stderr}")
+            st.error(f"Error de LibreOffice: {result.stderr}")
             return None
             
     except Exception as e:
-        st.warning(f"⚠️ Conversión PDF no disponible")
+        st.error(f"No se pudo ejecutar la conversión: {e}")
         return None
 
 # ============= LOGIN =============
