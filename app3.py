@@ -606,7 +606,7 @@ def convertir_word_a_pdf(word_path):
             '--headless',
             '--convert-to', 'pdf',
             '--outdir', output_dir,
-            '-env:UserInstallation=file:///tmp/lo_conversion',s
+            '-env:UserInstallation=file:///tmp/lo_conversion',
             os.path.abspath(word_path)
         ]
         
