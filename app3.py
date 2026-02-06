@@ -591,30 +591,40 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
     return output_path
 
 def convertir_word_a_pdf(word_path):
-    """Convierte un archivo Word a PDF"""
+    """Convierte un archivo Word a PDF usando Word directamente"""
+    import os
+    import pythoncom
+    import win32com.client
+    
+    pdf_path = word_path.replace('.docx', '.pdf')
+    word = None
+    
     try:
-        import pythoncom
-        from docx2pdf import convert
-        import os
-        
-        # Inicializar COM para el thread actual
+        # 1. Inicializar el hilo para Windows
         pythoncom.CoInitialize()
         
-        try:
-            # Crear ruta del PDF
-            pdf_path = word_path.replace('.docx', '.pdf')
-            
-            # Convertir
-            convert(word_path, pdf_path)
-            
-            return pdf_path
-        finally:
-            # Limpiar COM
-            pythoncom.CoUninitialize()
-            
+        # 2. Abrir Word de forma explícita (más seguro que docx2pdf)
+        word = win32com.client.Dispatch("Word.Application")
+        word.Visible = False
+        
+        # 3. Abrir el documento
+        doc = word.Documents.Open(os.path.abspath(word_path))
+        
+        # 4. Exportar como PDF (el formato 17 es PDF)
+        doc.SaveAs(os.path.abspath(pdf_path), FileFormat=17)
+        doc.Close()
+        
+        return pdf_path
+        
     except Exception as e:
-        st.error(f"Error en conversión: {str(e)}")
+        st.error(f"Error al convertir a PDF: {e}")
         return None
+    finally:
+        # 5. CERRAR WORD SIEMPRE (evita procesos zombies)
+        if word:
+            word.Quit()
+        # 6. Liberar el hilo
+        pythoncom.CoUninitialize()
 
 # ============= LOGIN =============
 if 'logged_in' not in st.session_state:
