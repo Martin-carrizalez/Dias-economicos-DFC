@@ -591,40 +591,52 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
     return output_path
 
 def convertir_word_a_pdf(word_path):
-    """Convierte un archivo Word a PDF usando Word directamente"""
+    """Convierte Word a PDF usando LibreOffice (funciona en Linux/Cloud)"""
+    import subprocess
     import os
-    import pythoncom
-    import win32com.client
+    import platform
     
     pdf_path = word_path.replace('.docx', '.pdf')
-    word = None
     
     try:
-        # 1. Inicializar el hilo para Windows
-        pythoncom.CoInitialize()
-        
-        # 2. Abrir Word de forma explícita (más seguro que docx2pdf)
-        word = win32com.client.Dispatch("Word.Application")
-        word.Visible = False
-        
-        # 3. Abrir el documento
-        doc = word.Documents.Open(os.path.abspath(word_path))
-        
-        # 4. Exportar como PDF (el formato 17 es PDF)
-        doc.SaveAs(os.path.abspath(pdf_path), FileFormat=17)
-        doc.Close()
-        
-        return pdf_path
-        
+        # Detectar si estamos en Windows o Linux
+        if platform.system() == 'Windows':
+            # En Windows local, intentar con Word
+            try:
+                import pythoncom
+                import win32com.client
+                
+                pythoncom.CoInitialize()
+                word = win32com.client.Dispatch("Word.Application")
+                word.Visible = False
+                doc = word.Documents.Open(os.path.abspath(word_path))
+                doc.SaveAs(os.path.abspath(pdf_path), FileFormat=17)
+                doc.Close()
+                word.Quit()
+                pythoncom.CoUninitialize()
+                
+                return pdf_path
+            except:
+                # Si falla Word, intentar LibreOffice en Windows
+                subprocess.run([
+                    'soffice', '--headless', '--convert-to', 'pdf',
+                    '--outdir', os.path.dirname(word_path),
+                    word_path
+                ], check=True, timeout=30)
+                return pdf_path
+        else:
+            # En Linux/Cloud usar LibreOffice
+            subprocess.run([
+                'libreoffice', '--headless', '--convert-to', 'pdf',
+                '--outdir', os.path.dirname(word_path),
+                word_path
+            ], check=True, timeout=30)
+            
+            return pdf_path
+            
     except Exception as e:
-        st.error(f"Error al convertir a PDF: {e}")
+        st.warning(f"⚠️ No se pudo convertir a PDF: {str(e)}")
         return None
-    finally:
-        # 5. CERRAR WORD SIEMPRE (evita procesos zombies)
-        if word:
-            word.Quit()
-        # 6. Liberar el hilo
-        pythoncom.CoUninitialize()
 
 # ============= LOGIN =============
 if 'logged_in' not in st.session_state:
