@@ -492,7 +492,7 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
     from docx.oxml.ns import nsdecls
     import os
     
-    plantilla_path = os.path.join(os.path.dirname(__file__), 'templates', 'FORMATO_CONSTANCIA_DE_SERVICIO.docx')
+    plantilla_path = os.path.join(os.path.dirname(__file__), 'templates', 'plantilla.docx')
     
     if not os.path.exists(plantilla_path):
         raise FileNotFoundError(f"No se encontró la plantilla en: {plantilla_path}")
