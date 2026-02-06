@@ -593,18 +593,27 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
 def convertir_word_a_pdf(word_path):
     """Convierte un archivo Word a PDF"""
     try:
+        import pythoncom
         from docx2pdf import convert
         import os
         
-        # Crear ruta del PDF
-        pdf_path = word_path.replace('.docx', '.pdf')
+        # Inicializar COM para el thread actual
+        pythoncom.CoInitialize()
         
-        # Convertir
-        convert(word_path, pdf_path)
-        
-        return pdf_path
+        try:
+            # Crear ruta del PDF
+            pdf_path = word_path.replace('.docx', '.pdf')
+            
+            # Convertir
+            convert(word_path, pdf_path)
+            
+            return pdf_path
+        finally:
+            # Limpiar COM
+            pythoncom.CoUninitialize()
+            
     except Exception as e:
-        # Si falla (Linux, etc), devolver None
+        st.error(f"Error en conversión: {str(e)}")
         return None
 
 # ============= LOGIN =============
