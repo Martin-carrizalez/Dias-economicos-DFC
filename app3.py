@@ -4,6 +4,7 @@ from datetime import datetime, timedelta, timezone
 import gspread
 from google.oauth2.service_account import Credentials
 import io
+import os
 
 st.set_page_config(page_title="Sistema Días Económicos", page_icon="📅", layout="wide")
 
@@ -588,6 +589,23 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
     composer.save(output_path)
     
     return output_path
+
+def convertir_word_a_pdf(word_path):
+    """Convierte un archivo Word a PDF"""
+    try:
+        from docx2pdf import convert
+        import os
+        
+        # Crear ruta del PDF
+        pdf_path = word_path.replace('.docx', '.pdf')
+        
+        # Convertir
+        convert(word_path, pdf_path)
+        
+        return pdf_path
+    except Exception as e:
+        # Si falla (Linux, etc), devolver None
+        return None
 
 # ============= LOGIN =============
 if 'logged_in' not in st.session_state:
@@ -1587,16 +1605,36 @@ with tab7:
                         )
                         
                         st.success(f"✅ Constancias generadas exitosamente para {len(empleados_seleccionados)} empleados")
-                        
-                        # Botón de descarga
-                        with open(output_path, 'rb') as f:
-                            st.download_button(
-                                label="📥 Descargar Constancias",
-                                data=f,
-                                file_name=f"Constancias_Q{num_quincena}_{año_const}.docx",
-                                mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                use_container_width=True
-                            )
+
+                        col1, col2 = st.columns(2)
+
+                        # Botón Word
+                        with col1:
+                            with open(output_path, 'rb') as f:
+                                st.download_button(
+                                    label="📄 Descargar Word",
+                                    data=f,
+                                    file_name=f"Constancias_Q{num_quincena}_{año_const}.docx",
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                    use_container_width=True
+                                )
+
+                        # Botón PDF
+                        with col2:
+                            with st.spinner("Convirtiendo a PDF..."):
+                                pdf_path = convertir_word_a_pdf(output_path)
+                                
+                                if pdf_path and os.path.exists(pdf_path):
+                                    with open(pdf_path, 'rb') as f:
+                                        st.download_button(
+                                            label="📕 Descargar PDF",
+                                            data=f,
+                                            file_name=f"Constancias_Q{num_quincena}_{año_const}.pdf",
+                                            mime="application/pdf",
+                                            use_container_width=True
+                                        )
+                                else:
+                                    st.warning("⚠️ Conversión a PDF no disponible en este sistema")
                     
                     except Exception as e:
                         st.error(f"❌ Error al generar constancias: {str(e)}")
