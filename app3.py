@@ -591,51 +591,26 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
     return output_path
 
 def convertir_word_a_pdf(word_path):
-    """Convierte Word a PDF usando LibreOffice (funciona en Linux/Cloud)"""
+    """Convierte Word a PDF usando unoconv"""
     import subprocess
     import os
-    import platform
     
     pdf_path = word_path.replace('.docx', '.pdf')
     
     try:
-        # Detectar si estamos en Windows o Linux
-        if platform.system() == 'Windows':
-            # En Windows local, intentar con Word
-            try:
-                import pythoncom
-                import win32com.client
-                
-                pythoncom.CoInitialize()
-                word = win32com.client.Dispatch("Word.Application")
-                word.Visible = False
-                doc = word.Documents.Open(os.path.abspath(word_path))
-                doc.SaveAs(os.path.abspath(pdf_path), FileFormat=17)
-                doc.Close()
-                word.Quit()
-                pythoncom.CoUninitialize()
-                
-                return pdf_path
-            except:
-                # Si falla Word, intentar LibreOffice en Windows
-                subprocess.run([
-                    'soffice', '--headless', '--convert-to', 'pdf',
-                    '--outdir', os.path.dirname(word_path),
-                    word_path
-                ], check=True, timeout=30)
-                return pdf_path
-        else:
-            # En Linux/Cloud usar LibreOffice
-            subprocess.run([
-                'libreoffice', '--headless', '--convert-to', 'pdf',
-                '--outdir', os.path.dirname(word_path),
-                word_path
-            ], check=True, timeout=30)
-            
+        # Usar unoconv (funciona con LibreOffice en Cloud)
+        result = subprocess.run([
+            'unoconv', '-f', 'pdf', '-o', pdf_path, word_path
+        ], capture_output=True, text=True, timeout=60)
+        
+        if result.returncode == 0 and os.path.exists(pdf_path):
             return pdf_path
+        else:
+            st.warning(f"⚠️ Error: {result.stderr}")
+            return None
             
     except Exception as e:
-        st.warning(f"⚠️ No se pudo convertir a PDF: {str(e)}")
+        st.warning(f"⚠️ Conversión PDF no disponible")
         return None
 
 # ============= LOGIN =============
