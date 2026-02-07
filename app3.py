@@ -576,22 +576,29 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
     # Combinar documentos con docxcompose
     from docxcompose.composer import Composer
 
-    # 1. Asegurarnos de que cada documento termine justo donde acaba el texto
-    for doc in docs:
-        # Eliminamos el espacio extra que Word añade al final de las secciones
-        for section in doc.sections:
-            section.footer_distance = 0
-            section.header_distance = 0
-            # Esto quita el salto de página automático de la sección
-            section.start_type = 0 # 0 significa 'Continuo'
+    # 1. Preparar el documento base (el primero)
+    doc_maestro = docs[0]
+    # Nos aseguramos de que el primer documento termine con un salto de página
+    doc_maestro.add_page_break()
 
-    # 2. Combinar limpiamente
-    composer = Composer(docs[0])
-    for doc in docs[1:]:
-        # append sin añadir nada extra
+    composer = Composer(doc_maestro)
+
+    # 2. Iterar sobre los demás documentos
+    for i, doc in enumerate(docs[1:]):
+        # Si NO es el último documento, le agregamos un salto de página al final
+        # para que el siguiente empiece en hoja nueva
+        if i < len(docs[1:]) - 1:
+            doc.add_page_break()
+        
+        # Unir sin dejar que docxcompose gestione las secciones (para evitar la basura)
         composer.append(doc)
 
-    # 3. Guardar
+    # 3. Limpiar secciones fantasma al final
+    # Esto evita que el PDF genere una última hoja en blanco
+    for section in doc_maestro.sections:
+        section.header_distance = 0
+        section.footer_distance = 0
+
     output_path = os.path.join(os.path.dirname(__file__), f'Constancias_Q{num_quincena}_{año}.docx')
     composer.save(output_path)
 
