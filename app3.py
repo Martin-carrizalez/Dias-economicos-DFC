@@ -576,30 +576,16 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
     # Combinar documentos con docxcompose
     from docxcompose.composer import Composer
 
-    # 1. Preparar el documento base (el primero)
-    doc_maestro = docs[0]
-    composer = Composer(doc_maestro)
+    composer = Composer(docs[0])
 
-    # 2. Unir los demás documentos
-    # IMPORTANTE: No usamos add_page_break() aquí, docxcompose maneja el pegado
     for doc in docs[1:]:
         composer.append(doc)
-
-    # 3. Forzar que cada documento empiece en hoja nueva (pero sin párrafos extra)
-    # y limpiar los espacios de encabezado/pie que empujan el texto hacia abajo
-    for section in doc_maestro.sections:
-        # 2 significa 'New Page'. Esto garantiza que no se encimen.
-        section.start_type = 2 
-        # Reducimos distancias de encabezado y pie a 0 para ganar espacio
-        section.header_distance = 0
-        section.footer_distance = 0
-        # Opcional: Si el texto sigue saltando a otra hoja, bajamos el margen inferior
-        # section.bottom_margin = 720000  # Equivale a 1.27 cm aprox.
 
     output_path = os.path.join(os.path.dirname(__file__), f'Constancias_Q{num_quincena}_{año}.docx')
     composer.save(output_path)
 
     return output_path
+    
 
 def convertir_word_a_pdf(word_path):
     """Convierte Word a PDF usando LibreOffice directamente"""
