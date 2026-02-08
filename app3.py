@@ -6,7 +6,7 @@ from google.oauth2.service_account import Credentials
 import io
 import os
 
-st.set_page_config(page_title="Sistema Días Económicos", page_icon="📅", layout="wide")
+st.set_page_config(page_title="Sistema de Gestión de RH DFC", page_icon="📅", layout="wide")
 
 SCOPES = ['https://www.googleapis.com/auth/spreadsheets', 'https://www.googleapis.com/auth/drive']
 
@@ -667,6 +667,47 @@ with col2:
 
 st.markdown("---")
 
+# CSS para mejorar visibilidad de pestañas
+st.markdown("""
+<style>
+    /* Pestañas normales */
+    .stTabs [data-baseweb="tab"] {
+        height: 60px;
+        padding: 15px 25px;
+        background-color: #f0f2f6;
+        border-radius: 5px 5px 0px 0px;
+        margin-right: 5px;
+        font-weight: 700;
+        font-size: 18px !important;
+        transition: all 0.3s ease;
+    }
+    
+    /* Texto dentro de pestañas más grande */
+    .stTabs [data-baseweb="tab"] p {
+        font-size: 18px !important;
+        font-weight: 700 !important;
+    }
+    
+    /* Hover sobre pestañas */
+    .stTabs [data-baseweb="tab"]:hover {
+        background-color: #e0e5eb;
+        transform: translateY(-2px);
+        box-shadow: 0 2px 5px rgba(0,0,0,0.1);
+    }
+    
+    /* Pestaña activa/seleccionada */
+    .stTabs [aria-selected="true"] {
+        background-color: #0068c9 !important;
+        color: white !important;
+        font-weight: 800 !important;
+        font-size: 19px !important;
+        box-shadow: 0 4px 10px rgba(0,104,201,0.3);
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Cargar datos solo una vez al inicio
+
 # Mostrar alerta de login si hay propuestas críticas
 if st.session_state.get('mostrar_alerta_login', False):
     with st.container():
@@ -692,14 +733,14 @@ if 'df_empleados' not in st.session_state:
             
             # Leer TODAS las hojas y convertir a DataFrames
             st.session_state['df_empleados'] = pd.DataFrame(spreadsheet.worksheet("Empleados").get_all_records())
-            st.write("✅ Empleados OK")  # ← AGREGAR
+            
             
             st.session_state['df_solicitudes'] = pd.DataFrame(spreadsheet.worksheet("Solicitudes").get_all_records())
-            st.write("✅ Solicitudes OK")  # ← AGREGAR
+            
             
             # Incapacidades con columnas por defecto
             df_incap = pd.DataFrame(spreadsheet.worksheet("Incapacidades").get_all_records())
-            st.write("✅ Incapacidades OK")  # ← AGREGAR
+           
             if len(df_incap) == 0:
                 df_incap = pd.DataFrame(columns=['ID', 'EmpleadoID', 'RFC', 'Nombre Completo', 'Correo Empleado',
                                                   'Telefono Contacto', 'Numero Incapacidad', 'Fecha Inicio', 
@@ -710,7 +751,7 @@ if 'df_empleados' not in st.session_state:
             
             # Pendientes con columnas por defecto
             df_pend = pd.DataFrame(spreadsheet.worksheet("Pendientes_Empleado").get_all_records())
-            st.write("✅ Pendientes OK")  # ← AGREGAR
+            
             if len(df_pend) == 0:
                 df_pend = pd.DataFrame(columns=['ID', 'EmpleadoID', 'RFC', 'Nombre Completo', 'Tipo_Pendiente',
                                                 'Descripcion', 'Quincena', 'Año', 'Estado', 'Fecha_Registro',
@@ -718,7 +759,7 @@ if 'df_empleados' not in st.session_state:
             st.session_state['df_pendientes'] = df_pend
             
             st.session_state['df_constancias'] = pd.DataFrame(spreadsheet.worksheet("Constancias").get_all_records())
-            st.write("✅ Constancias OK")  # ← AGREGAR
+           
             
             # Guardar el cliente para escrituras
             st.session_state['client'] = client
@@ -791,7 +832,7 @@ with st.sidebar:
 
 # TABS PRINCIPALES
 tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
-    "📝 Registrar Solicitud",
+    "📝 Días Económicos",
     "🏥 Incapacidades",
     "👥 Ver Empleados", 
     "📊 Estatus Individual",
@@ -801,7 +842,7 @@ tab1, tab2, tab3, tab4, tab5, tab6, tab7, tab8 = st.tabs([
     "📋 Normativa"
 ])
 
-# TAB 1: REGISTRAR SOLICITUD
+# TAB 1: DÍAS ECONÓMICOS
 with tab1:
     st.header("Registrar Nueva Solicitud")
     
@@ -886,48 +927,48 @@ with tab1:
         - **Días Disponibles:** **{emp_info['DIAS_REALES']}/9**
         """)
         # Verificar si hay concentración de personal
-if fechas_procesadas and tipo == 'economico':
-    empleados_ausentes = []
-    
-    for fecha_check in fechas_procesadas:
-        # Contar cuántos empleados estarán ausentes ese día
-        for _, sol in df_solicitudes.iterrows():
-            sol_inicio = pd.to_datetime(sol['Fecha Inicio'])
-            sol_fin = pd.to_datetime(sol['Fecha Fin'])
+        if fechas_procesadas and tipo == 'economico':
+            empleados_ausentes = []
             
-            if sol_inicio.date() <= fecha_check.date() <= sol_fin.date():
-                empleados_ausentes.append({
-                    'fecha': fecha_check.strftime('%d/%m/%Y'),
-                    'nombre': sol['Nombre Completo'],
-                    'tipo': sol['Tipo Permiso']
-                })
-    
-    # Contar por fecha
-    from collections import Counter
-    fechas_count = Counter([e['fecha'] for e in empleados_ausentes])
-    
-    # Alertar si alguna fecha tiene 5+
-    for fecha, count in fechas_count.items():
-        if count >= 4:  # 4 existentes + 1 nuevo = 5 total
-            st.error(f"""
-            🚨 **ALERTA: CONCENTRACIÓN DE PERSONAL**
+            for fecha_check in fechas_procesadas:
+                # Contar cuántos empleados estarán ausentes ese día
+                for _, sol in df_solicitudes.iterrows():
+                    sol_inicio = pd.to_datetime(sol['Fecha Inicio'])
+                    sol_fin = pd.to_datetime(sol['Fecha Fin'])
+                    
+                    if sol_inicio.date() <= fecha_check.date() <= sol_fin.date():
+                        empleados_ausentes.append({
+                            'fecha': fecha_check.strftime('%d/%m/%Y'),
+                            'nombre': sol['Nombre Completo'],
+                            'tipo': sol['Tipo Permiso']
+                        })
             
-            El **{fecha}** ya tienen permiso **{count} empleados**
+            # Contar por fecha
+            from collections import Counter
+            fechas_count = Counter([e['fecha'] for e in empleados_ausentes])
             
-            Si registras esta solicitud serán **{count + 1} empleados ausentes**
-            
-            ⚠️ **IMPACTO OPERATIVO:** Posible desabasto de personal
-            """)
-            
-            # Mostrar quiénes estarán ausentes
-            ausentes_fecha = [e for e in empleados_ausentes if e['fecha'] == fecha]
-            for aus in ausentes_fecha[:5]:
-                st.warning(f"• {aus['nombre']} - {aus['tipo']}")
-            
-            if len(ausentes_fecha) > 5:
-                st.warning(f"... y {len(ausentes_fecha) - 5} más")
-        
-        st.markdown("---")
+            # Alertar si alguna fecha tiene 5+
+            for fecha, count in fechas_count.items():
+                if count >= 4:  # 4 existentes + 1 nuevo = 5 total
+                    st.error(f"""
+                    🚨 **ALERTA: CONCENTRACIÓN DE PERSONAL**
+                    
+                    El **{fecha}** ya tienen permiso **{count} empleados**
+                    
+                    Si registras esta solicitud serán **{count + 1} empleados ausentes**
+                    
+                    ⚠️ **IMPACTO OPERATIVO:** Posible desabasto de personal
+                    """)
+                    
+                    # Mostrar quiénes estarán ausentes
+                    ausentes_fecha = [e for e in empleados_ausentes if e['fecha'] == fecha]
+                    for aus in ausentes_fecha[:5]:
+                        st.warning(f"• {aus['nombre']} - {aus['tipo']}")
+                    
+                    if len(ausentes_fecha) > 5:
+                        st.warning(f"... y {len(ausentes_fecha) - 5} más")
+                
+                st.markdown("---")
         
         if st.button("✅ REGISTRAR SOLICITUD", type="primary", use_container_width=True):
             if not fechas_procesadas:
@@ -1209,11 +1250,20 @@ with tab3:
         df_mostrar = df_filtrado.copy()
         pendientes_count = []
         for _, emp in df_mostrar.iterrows():
-            count = len(df_pendientes[
+            pends = df_pendientes[
                 (df_pendientes['EmpleadoID'] == emp['ID']) & 
                 (df_pendientes['Estado'] == 'Pendiente')
-            ])
-            pendientes_count.append(f"{'⚠️ ' + str(count) if count > 0 else '✅ 0'}")
+            ]
+            count = len(pends)
+            
+            if count > 0:
+                descripciones = pends['Tipo_Pendiente'].head(2).tolist()
+                texto = f"⚠️ {count}: {', '.join(descripciones)}"
+                if count > 2:
+                    texto += "..."
+                pendientes_count.append(texto)
+            else:
+                pendientes_count.append('✅ 0')
         
         df_mostrar['PENDIENTES'] = pendientes_count
         
