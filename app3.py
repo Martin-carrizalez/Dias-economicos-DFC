@@ -577,9 +577,9 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
     doc_final = docs[0]
     
     for doc in docs[1:]:
-        doc_final.add_page_break()
+        # NO agregar page_break - solo copiar contenido
         for element in list(doc.element.body):
-            # SALTAR sectPr (propiedades de sección que causan páginas en blanco)
+            # SALTAR sectPr (propiedades de sección)
             if element.tag.endswith('sectPr'):
                 continue
             doc_final.element.body.append(element)
