@@ -721,16 +721,11 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
         doc_final = docs[0]
         
         for doc in docs[1:]:
-            # Agregar salto de página limpio
-            doc_final.add_page_break()
-            
-            # Copiar solo párrafos y tablas (NO sectPr ni breaks)
+            # Copiar TODO excepto sectPr
             for element in list(doc.element.body):
-                tag = element.tag.split('}')[-1]  # Obtener nombre sin namespace
-                
-                # SOLO copiar párrafos y tablas
-                if tag in ['p', 'tbl']:
-                    doc_final.element.body.append(element)
+                if element.tag.endswith('sectPr'):
+                    continue
+                doc_final.element.body.append(element)
         
         # Guardar
         tipo_archivo = "Encargados_CM" if tipo_comision == "Encargados CM" else "Comisiones_Generales"
