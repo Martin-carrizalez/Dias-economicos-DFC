@@ -579,6 +579,9 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
     for doc in docs[1:]:
         doc_final.add_page_break()
         for element in list(doc.element.body):
+            # SALTAR sectPr (propiedades de sección que causan páginas en blanco)
+            if element.tag.endswith('sectPr'):
+                continue
             doc_final.element.body.append(element)
     
     output_path = os.path.join(os.path.dirname(__file__), f'Constancias_Q{num_quincena}_{año}.docx')
@@ -720,6 +723,9 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
         for doc in docs[1:]:
             doc_final.add_page_break()
             for element in list(doc.element.body):
+                # SALTAR sectPr (propiedades de sección que causan páginas en blanco)
+                if element.tag.endswith('sectPr'):
+                    continue
                 doc_final.element.body.append(element)
         
         # Guardar
