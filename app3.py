@@ -573,16 +573,16 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
         
         docs.append(doc)
     
-    # Combinar documentos con docxcompose
-    from docxcompose.composer import Composer
-
-    composer = Composer(docs[0])
-
+    # Combinar documentos SIN docxcompose
+    doc_final = docs[0]
+    
     for doc in docs[1:]:
-        composer.append(doc)
-
+        doc_final.add_page_break()
+        for element in list(doc.element.body):
+            doc_final.element.body.append(element)
+    
     output_path = os.path.join(os.path.dirname(__file__), f'Constancias_Q{num_quincena}_{año}.docx')
-    composer.save(output_path)
+    doc_final.save(output_path)
 
     return output_path
     
@@ -714,18 +714,18 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
             docs.append(doc)
             oficio_actual += 1
         
-        # Combinar documentos
-        from docxcompose.composer import Composer
-        
-        composer = Composer(docs[0])
+        # Combinar documentos SIN docxcompose
+        doc_final = docs[0]
         
         for doc in docs[1:]:
-            composer.append(doc)
+            doc_final.add_page_break()
+            for element in list(doc.element.body):
+                doc_final.element.body.append(element)
         
         # Guardar
         tipo_archivo = "Encargados_CM" if tipo_comision == "Encargados CM" else "Comisiones_Generales"
         output_path = os.path.join(os.path.dirname(__file__), f'{tipo_archivo}_{oficio_inicial}.docx')
-        composer.save(output_path)
+        doc_final.save(output_path)
         
         return output_path
         
