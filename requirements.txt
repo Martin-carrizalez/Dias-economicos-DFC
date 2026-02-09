@@ -7,6 +7,6 @@ google-auth-httplib2>=0.1.1
 openpyxl>=3.1.0
 xlrd>=2.0.1
 plotly
-python-docx
-docxcompose
-setuptools
+python-docx==0.8.11
+docxcompose==1.4.0
+setuptools>=65.5.1
