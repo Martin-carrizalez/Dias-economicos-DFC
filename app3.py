@@ -619,6 +619,118 @@ def convertir_word_a_pdf(word_path):
     except Exception as e:
         st.error(f"No se pudo ejecutar la conversión: {e}")
         return None
+    
+def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_doc, fecha_inicio, fecha_fin):
+    """Genera documento Word de comisiones"""
+    from docx import Document
+    from datetime import datetime
+    import os
+    
+    try:
+        # Seleccionar plantilla según tipo
+        if tipo_comision == "Encargados CM":
+            plantilla_path = os.path.join(os.path.dirname(__file__), 'templates', 'PLANTILLA_ENCARGADOS_CM.docx')
+        else:
+            plantilla_path = os.path.join(os.path.dirname(__file__), 'templates', 'PLANTILLA_COMISIONES_GENERALES.docx')
+        
+        if not os.path.exists(plantilla_path):
+            raise FileNotFoundError(f"Plantilla no encontrada: {plantilla_path}")
+        
+        # Generar un documento por cada persona
+        docs = []
+        oficio_actual = oficio_inicial
+        
+        for idx, persona in df_comisiones.iterrows():
+            doc = Document(plantilla_path)
+            
+            # Diccionario de meses en español
+            meses = {
+                1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
+                5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
+                9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
+            }
+            
+            # Convertir fechas a español
+            fecha_doc_esp = f"{fecha_doc.day} de {meses[fecha_doc.month]} de {fecha_doc.year}"
+            fecha_inicio_esp = f"{fecha_inicio.day} de {meses[fecha_inicio.month]} de {fecha_inicio.year}"
+            fecha_fin_esp = f"{fecha_fin.day} de {meses[fecha_fin.month]} de {fecha_fin.year}"
+            
+            # Preparar reemplazos
+            reemplazos = {
+                '<<OFICIO>>': f"{oficio_actual}/52/2026",
+                '<<FECHA>>': fecha_doc_esp,
+                '<<NOMBRE_COMPLETO>>': persona['nombre_completo'],
+                '<<FECHA_INICIO>>': fecha_inicio_esp,
+                '<<FECHA_FIN>>': fecha_fin_esp
+            }
+            
+            # Agregar campos específicos según tipo
+            if tipo_comision == "Encargados CM":
+                reemplazos.update({
+                    '<<CENTRO_MAESTROS>>': persona.get('centro_maestros', ''),
+                    '<<DOMICILIO>>': persona.get('domicilio', ''),
+                    '<<COLONIA>>': persona.get('colonia', ''),
+                    '<<MUNICIPIO>>': persona.get('municipio', '')
+                })
+            else:  # Comisiones Generales
+                reemplazos.update({
+                    '<<INSTITUCION>>': persona.get('institucion', ''),
+                    '<<UBICACION>>': persona.get('institucion', ''),  # Puede ser el mismo
+                    '<<DOMICILIO>>': persona.get('domicilio', ''),
+                    '<<COLONIA>>': persona.get('colonia', ''),
+                    '<<MUNICIPIO>>': persona.get('municipio', ''),
+                    '<<CP>>': persona.get('cp', '')
+                })
+            
+            # Reemplazar en párrafos
+            for paragraph in doc.paragraphs:
+                texto_completo = paragraph.text
+                for marcador, valor in reemplazos.items():
+                    if marcador in texto_completo:
+                        texto_completo = texto_completo.replace(marcador, str(valor))
+                
+                if texto_completo != paragraph.text:
+                    for run in paragraph.runs:
+                        run.text = ''
+                    if paragraph.runs:
+                        paragraph.runs[0].text = texto_completo
+            
+            # Reemplazar en tablas si existen
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            texto_completo = paragraph.text
+                            for marcador, valor in reemplazos.items():
+                                if marcador in texto_completo:
+                                    texto_completo = texto_completo.replace(marcador, str(valor))
+                            
+                            if texto_completo != paragraph.text:
+                                for run in paragraph.runs:
+                                    run.text = ''
+                                if paragraph.runs:
+                                    paragraph.runs[0].text = texto_completo
+            
+            docs.append(doc)
+            oficio_actual += 1
+        
+        # Combinar documentos
+        from docxcompose.composer import Composer
+        
+        composer = Composer(docs[0])
+        
+        for doc in docs[1:]:
+            composer.append(doc)
+        
+        # Guardar
+        tipo_archivo = "Encargados_CM" if tipo_comision == "Encargados CM" else "Comisiones_Generales"
+        output_path = os.path.join(os.path.dirname(__file__), f'{tipo_archivo}_{oficio_inicial}.docx')
+        composer.save(output_path)
+        
+        return output_path
+        
+    except Exception as e:
+        raise Exception(f"Error al generar comisiones: {str(e)}")
 
 # ============= LOGIN =============
 if 'logged_in' not in st.session_state:
@@ -759,8 +871,8 @@ if 'df_empleados' not in st.session_state:
             st.session_state['df_pendientes'] = df_pend
             
             st.session_state['df_constancias'] = pd.DataFrame(spreadsheet.worksheet("Constancias").get_all_records())
-           
-            
+            # AGREGAR ESTA LÍNEA:
+            st.session_state['df_comisiones'] = pd.DataFrame(spreadsheet.worksheet("Comisiones").get_all_records())
             # Guardar el cliente para escrituras
             st.session_state['client'] = client
             st.session_state['spreadsheet_name'] = "Dias_Economicos_Formacion_Continua"
@@ -778,6 +890,7 @@ df_solicitudes = st.session_state['df_solicitudes'].copy()
 df_incapacidades = st.session_state['df_incapacidades'].copy()
 df_pendientes = st.session_state['df_pendientes'].copy()
 df_constancias = st.session_state['df_constancias'].copy()
+df_comisiones = st.session_state['df_comisiones'].copy()
 
 # Calcular días disponibles
 for idx, emp in df_empleados.iterrows():
@@ -1607,9 +1720,9 @@ with tab7:
     st.header("📋 Gestión Documental")
     
     tipo_doc = st.selectbox(
-        "Tipo de documento",
-        ["📄 Constancias", "🚗 Comisiones (próximamente)", "📋 Propuestas/Oficios (próximamente)"],
-        help="Selecciona el tipo de documento a generar"
+    "Tipo de documento",
+    ["📄 Constancias", "🚗 Comisiones", "📋 Propuestas/Oficios (próximamente)"],
+    help="Selecciona el tipo de documento a generar"
     )
     
     if tipo_doc == "📄 Constancias":
@@ -1703,6 +1816,138 @@ with tab7:
                         st.error(f"❌ Error al generar constancias: {str(e)}")
                         st.error("Verifica que la plantilla Word esté en la ubicación correcta")
     
+    elif tipo_doc == "🚗 Comisiones":
+        st.markdown("---")
+        st.subheader("Generador de Comisiones")
+        
+        # Selector de tipo de comisión
+        tipo_comision = st.radio(
+            "Tipo de comisión",
+            ["Encargados CM", "Comisiones Generales"],
+            horizontal=True
+        )
+        
+        st.markdown("---")
+        
+        # Cargar datos de comisiones desde Google Sheets
+        if 'df_comisiones' not in st.session_state:
+            st.error("❌ No hay hoja 'Comisiones' en Google Sheets")
+            st.stop()
+        
+        df_comisiones_todas = st.session_state['df_comisiones']
+        
+        # Filtrar por tipo
+        if tipo_comision == "Encargados CM":
+            df_filtrado = df_comisiones_todas[df_comisiones_todas['tipo_comision'] == 'Encargado CM'].copy()
+        else:
+            df_filtrado = df_comisiones_todas[df_comisiones_todas['tipo_comision'] == 'General'].copy()
+        
+        if len(df_filtrado) == 0:
+            st.warning(f"⚠️ No hay registros de tipo '{tipo_comision}'")
+            st.stop()
+        
+        # Inputs
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            oficio_inicial = st.number_input("Número de Oficio Inicial", min_value=1, max_value=999, value=118)
+        
+        with col2:
+            fecha_doc = st.date_input("Fecha del Documento", value=datetime.now(), key="fecha_comision")
+        
+        with col3:
+            st.write("")  # Espaciador
+        
+        col4, col5 = st.columns(2)
+        
+        with col4:
+            fecha_inicio = st.date_input("Comisión del", value=datetime(2026, 1, 1))
+        
+        with col5:
+            fecha_fin = st.date_input("Hasta el", value=datetime(2026, 2, 28))
+        
+        st.markdown("---")
+        st.markdown("**Seleccionar personas para generar comisiones:**")
+        
+        # Lista de personas
+        lista_personas = df_filtrado['nombre_completo'].tolist()
+        
+        personas_seleccionadas = st.multiselect(
+            "Personas",
+            options=lista_personas,
+            default=lista_personas,
+            help="Por defecto están todas seleccionadas"
+        )
+        
+        st.info(f"📊 **{len(personas_seleccionadas)} personas seleccionadas** de {len(lista_personas)} totales")
+        
+        # Vista previa
+        if personas_seleccionadas:
+            with st.expander("👁️ Vista previa de oficios"):
+                preview_data = []
+                oficio_temp = oficio_inicial
+                for nombre in personas_seleccionadas:
+                    preview_data.append({
+                        'Oficio': f"{oficio_temp}/52/2026",
+                        'Nombre': nombre
+                    })
+                    oficio_temp += 1
+                st.dataframe(preview_data, use_container_width=True, hide_index=True)
+        
+        if st.button("✅ Generar Comisiones", type="primary", use_container_width=True):
+            if not personas_seleccionadas:
+                st.error("❌ Debes seleccionar al menos una persona")
+            else:
+                with st.spinner("Generando comisiones..."):
+                    try:
+                        # Filtrar DataFrame
+                        df_seleccionado = df_filtrado[df_filtrado['nombre_completo'].isin(personas_seleccionadas)].copy()
+                        
+                        # Generar documento
+                        output_path = generar_comisiones_word(
+                            df_seleccionado,
+                            tipo_comision,
+                            oficio_inicial,
+                            fecha_doc,
+                            fecha_inicio,
+                            fecha_fin
+                        )
+                        
+                        st.success(f"✅ Comisiones generadas exitosamente para {len(personas_seleccionadas)} personas")
+                        
+                        col1, col2 = st.columns(2)
+                        
+                        # Botón Word
+                        with col1:
+                            with open(output_path, 'rb') as f:
+                                tipo_archivo = "Encargados_CM" if tipo_comision == "Encargados CM" else "Comisiones_Generales"
+                                st.download_button(
+                                    label="📄 Descargar Word",
+                                    data=f,
+                                    file_name=f"{tipo_archivo}_Oficio_{oficio_inicial}.docx",
+                                    mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                    use_container_width=True
+                                )
+                        
+                        # Botón PDF
+                        with col2:
+                            with st.spinner("Convirtiendo a PDF..."):
+                                pdf_path = convertir_word_a_pdf(output_path)
+                                
+                                if pdf_path and os.path.exists(pdf_path):
+                                    with open(pdf_path, 'rb') as f:
+                                        st.download_button(
+                                            label="📕 Descargar PDF",
+                                            data=f,
+                                            file_name=f"{tipo_archivo}_Oficio_{oficio_inicial}.pdf",
+                                            mime="application/pdf",
+                                            use_container_width=True
+                                        )
+                                else:
+                                    st.warning("⚠️ Conversión a PDF no disponible")
+                    
+                    except Exception as e:
+                        st.error(f"❌ Error al generar comisiones: {str(e)}")
     else:
         st.info("🚧 Esta funcionalidad estará disponible próximamente")
 
