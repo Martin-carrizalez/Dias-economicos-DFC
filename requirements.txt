@@ -11,3 +11,4 @@ python-docx
 docxcompose
 docx2pdf
 unoconv
+setuptools
