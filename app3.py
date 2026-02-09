@@ -1853,7 +1853,7 @@ with tab7:
             oficio_inicial = st.number_input("Número de Oficio Inicial", min_value=1, max_value=999, value=118)
         
         with col2:
-            fecha_doc = st.date_input("Fecha del Documento", value=datetime.now(), key="fecha_comision")
+            fecha_doc = st.date_input("Fecha del Documento", value=datetime.now())
         
         with col3:
             st.write("")  # Espaciador
