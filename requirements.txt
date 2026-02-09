@@ -9,6 +9,4 @@ xlrd>=2.0.1
 plotly
 python-docx
 docxcompose
-docx2pdf
-unoconv
 setuptools
