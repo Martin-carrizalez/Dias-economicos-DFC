@@ -730,7 +730,9 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
         return output_path
         
     except Exception as e:
-        raise Exception(f"Error al generar comisiones: {str(e)}")
+        import traceback
+        error_completo = traceback.format_exc()
+        raise Exception(f"Error al generar comisiones: {str(e)}\n\nStack trace:\n{error_completo}")
 
 # ============= LOGIN =============
 if 'logged_in' not in st.session_state:
