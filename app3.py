@@ -63,10 +63,11 @@ def verificar_login(usuario, password):
     try:
         usuarios = st.secrets["usuarios"]
         if usuario in usuarios and usuarios[usuario]["password"] == password:
-            return True, usuarios[usuario]["nombre"]
+            tipo = usuarios[usuario].get("tipo", "admin")  # Default admin
+            return True, usuarios[usuario]["nombre"], tipo
     except:
         pass
-    return False, None
+    return False, None, None
 
 def inicializar_sheets(client):
     try:
@@ -755,11 +756,12 @@ if not st.session_state['logged_in']:
         password = st.text_input("Contraseña", type="password")
         
         if st.button("Ingresar", use_container_width=True, type="primary"):
-            valido, nombre = verificar_login(usuario, password)
+            valido, nombre, tipo = verificar_login(usuario, password)
             if valido:
                 st.session_state['logged_in'] = True
                 st.session_state['usuario'] = usuario
                 st.session_state['nombre_usuario'] = nombre
+                st.session_state['tipo_usuario'] = tipo
                 
                 # Verificar alertas críticas
                 fechas_limite_login = verificar_fechas_limite()
@@ -773,6 +775,118 @@ if not st.session_state['logged_in']:
                 st.error("❌ Usuario o contraseña incorrectos")
     st.stop()
 
+# ============= VISORES (SOLO LECTURA) =============
+tipo_usuario = st.session_state.get('tipo_usuario', 'admin')
+
+if tipo_usuario == 'visor_viaticos':
+    st.title("📋 Consulta de Empleados - Viáticos")
+    st.markdown("**Vista de solo lectura**")
+    
+    col1, col2 = st.columns([4,1])
+    with col2:
+        st.write(f"👤 **{st.session_state['nombre_usuario']}**")
+        if st.button("🚪 Cerrar Sesión"):
+            st.session_state['logged_in'] = False
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # Cargar datos
+    if 'df_empleados' not in st.session_state:
+        client = conectar_sheets()
+        if client:
+            spreadsheet = client.open("Dias_Economicos_Formacion_Continua")
+            st.session_state['df_empleados'] = pd.DataFrame(spreadsheet.worksheet("Empleados").get_all_records())
+    
+    df_empleados = st.session_state['df_empleados'].copy()
+    
+    # Búsqueda
+    busqueda = st.text_input("🔍 Buscar por nombre, RFC o CURP")
+    
+    if busqueda:
+        mascara = (
+            df_empleados['PATERNO'].str.contains(busqueda, case=False, na=False) |
+            df_empleados['MATERNO'].str.contains(busqueda, case=False, na=False) |
+            df_empleados['NOMBRE'].str.contains(busqueda, case=False, na=False) |
+            df_empleados['RFC'].str.contains(busqueda, case=False, na=False) |
+            df_empleados['CURP'].str.contains(busqueda, case=False, na=False)
+        )
+        df_empleados = df_empleados[mascara]
+    
+    st.info(f"📊 Mostrando {len(df_empleados)} empleados")
+    
+    # Vista restringida: solo CURP y RFC
+    df_vista = df_empleados[['PATERNO', 'MATERNO', 'NOMBRE', 'CURP', 'RFC']].copy()
+    df_vista['NOMBRE COMPLETO'] = df_vista['PATERNO'] + ' ' + df_vista['MATERNO'] + ' ' + df_vista['NOMBRE']
+    df_vista = df_vista[['NOMBRE COMPLETO', 'CURP', 'RFC']]
+    
+    st.dataframe(df_vista, use_container_width=True, hide_index=True)
+    st.stop()
+
+elif tipo_usuario == 'visor_secretarias':
+    st.title("📋 Directorio de Empleados - Secretarias")
+    st.markdown("**Vista de solo lectura**")
+    
+    col1, col2 = st.columns([4,1])
+    with col2:
+        st.write(f"👤 **{st.session_state['nombre_usuario']}**")
+        if st.button("🚪 Cerrar Sesión"):
+            st.session_state['logged_in'] = False
+            st.rerun()
+    
+    st.markdown("---")
+    
+    # Cargar datos
+    if 'df_empleados' not in st.session_state:
+        client = conectar_sheets()
+        if client:
+            spreadsheet = client.open("Dias_Economicos_Formacion_Continua")
+            st.session_state['df_empleados'] = pd.DataFrame(spreadsheet.worksheet("Empleados").get_all_records())
+    
+    df_empleados = st.session_state['df_empleados'].copy()
+    
+    # Búsqueda
+    busqueda = st.text_input("🔍 Buscar por nombre, RFC, CURP o Centro de Maestros")
+    
+    if busqueda:
+        mascara = (
+            df_empleados['PATERNO'].str.contains(busqueda, case=False, na=False) |
+            df_empleados['MATERNO'].str.contains(busqueda, case=False, na=False) |
+            df_empleados['NOMBRE'].str.contains(busqueda, case=False, na=False) |
+            df_empleados['RFC'].str.contains(busqueda, case=False, na=False) |
+            df_empleados['CURP'].str.contains(busqueda, case=False, na=False) |
+            df_empleados.get('CENTRO DE TRABAJO', pd.Series()).str.contains(busqueda, case=False, na=False)
+        )
+        df_empleados = df_empleados[mascara]
+    
+    st.info(f"📊 Mostrando {len(df_empleados)} empleados")
+    
+    # Vista: CURP, RFC, Teléfono, Centro de Maestros
+    columnas = ['PATERNO', 'MATERNO', 'NOMBRE', 'CURP', 'RFC']
+    
+    # Agregar teléfono si existe
+    if 'TELEFONO' in df_empleados.columns:
+        columnas.append('TELEFONO')
+    
+    # Agregar centro de trabajo
+    if 'CENTRO DE TRABAJO' in df_empleados.columns:
+        columnas.append('CENTRO DE TRABAJO')
+    
+    df_vista = df_empleados[columnas].copy()
+    df_vista['NOMBRE COMPLETO'] = df_vista['PATERNO'] + ' ' + df_vista['MATERNO'] + ' ' + df_vista['NOMBRE']
+    
+    cols_finales = ['NOMBRE COMPLETO', 'CURP', 'RFC']
+    if 'TELEFONO' in columnas:
+        cols_finales.append('TELEFONO')
+    if 'CENTRO DE TRABAJO' in columnas:
+        cols_finales.append('CENTRO DE TRABAJO')
+    
+    df_vista = df_vista[cols_finales]
+    
+    st.dataframe(df_vista, use_container_width=True, hide_index=True)
+    st.stop()
+
+# Si es admin, continúa con la app normal
 # ============= MAIN APP =============
 st.title("📅 Sistema de Gestión de RH DFC")
 st.markdown("**Dirección de Formación Continua** - Secretaría de Educación Jalisco")
