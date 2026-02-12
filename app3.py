@@ -779,7 +779,7 @@ if not st.session_state['logged_in']:
 tipo_usuario = st.session_state.get('tipo_usuario', 'admin')
 
 if tipo_usuario == 'visor_viaticos':
-    st.title("📋 Consulta de Empleados - Viáticos")
+    st.title("📋 Consulta de Empleados - Viáticos 🚗")
     st.markdown("**Vista de solo lectura**")
     
     col1, col2 = st.columns([4,1])
