@@ -1583,17 +1583,25 @@ with tab4:
                                 spreadsheet = client.open(st.session_state['spreadsheet_name'])
                                 sheet_pend = spreadsheet.worksheet("Pendientes_Empleado")
                                 
-                                # Marcar como completado
-                                cell = sheet_pend.find(str(pend['ID']))
-                                sheet_pend.update_cell(cell.row, 9, 'Completado')
-                                sheet_pend.update_cell(cell.row, 11, datetime.now().strftime('%Y-%m-%d'))
-                                sheet_pend.update_cell(cell.row, 12, st.session_state['nombre_usuario'])
+                                # Buscar en la COLUMNA A (ID) específicamente
+                                todos_ids = sheet_pend.col_values(1)  # Columna A = IDs
                                 
-                                # Actualizar session_state
-                                st.session_state['df_pendientes'] = pd.DataFrame(sheet_pend.get_all_records())
-                                
-                                st.success("✅ Marcado como completado")
-                                st.rerun()
+                                try:
+                                    fila = todos_ids.index(str(pend['ID'])) + 1  # +1 porque index empieza en 0
+                                    
+                                    # Actualizar las celdas
+                                    sheet_pend.update_cell(fila, 9, 'Completado')
+                                    sheet_pend.update_cell(fila, 11, datetime.now().strftime('%Y-%m-%d'))
+                                    sheet_pend.update_cell(fila, 12, st.session_state['nombre_usuario'])
+                                    
+                                    # Actualizar session_state
+                                    st.session_state['df_pendientes'] = pd.DataFrame(sheet_pend.get_all_records())
+                                    
+                                    st.success("✅ Marcado como completado")
+                                    st.rerun()
+                                    
+                                except ValueError:
+                                    st.error(f"❌ No se encontró el pendiente ID {pend['ID']}")
                 else:
                     st.success("### ✅ SIN PENDIENTES - Todo al día")
                 
