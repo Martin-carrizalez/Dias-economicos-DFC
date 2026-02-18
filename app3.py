@@ -625,83 +625,120 @@ def convertir_word_a_pdf(word_path):
         return None
     
 def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_doc, fecha_inicio, fecha_fin):
+    """Genera documento Word de comisiones"""
     from docx import Document
+    from datetime import datetime
     import os
-    import copy # Importante para no romper el XML
-
+    
     try:
-        # 1. Ruta de plantilla
-        nombre_p = 'PLANTILLA_ENCARGADOS_CM.docx' if tipo_comision == "Encargados CM" else 'PLANTILLA_COMISIONES_GENERALES.docx'
-        plantilla_path = os.path.join(os.path.dirname(__file__), 'templates', nombre_p)
+        # Seleccionar plantilla según tipo
+        if tipo_comision == "Encargados CM":
+            plantilla_path = os.path.join(os.path.dirname(__file__), 'templates', 'PLANTILLA_ENCARGADOS_CM.docx')
+        else:
+            plantilla_path = os.path.join(os.path.dirname(__file__), 'templates', 'PLANTILLA_COMISIONES_GENERALES.docx')
         
         if not os.path.exists(plantilla_path):
-            raise FileNotFoundError(f"No existe: {plantilla_path}")
-
-        # Documento base donde uniremos todo
-        doc_final = Document(plantilla_path)
-        # Lo vaciamos pero conservamos sus estilos
-        for p in doc_final.paragraphs:
-            p._element.getparent().remove(p._element)
-
+            raise FileNotFoundError(f"Plantilla no encontrada: {plantilla_path}")
+        
+        # Generar un documento por cada persona
+        docs = []
         oficio_actual = oficio_inicial
-        meses = {1:'enero', 2:'febrero', 3:'marzo', 4:'abril', 5:'mayo', 6:'junio', 
-                 7:'julio', 8:'agosto', 9:'septiembre', 10:'octubre', 11:'noviembre', 12:'diciembre'}
-
-        total = len(df_comisiones)
-
-        for idx, (_, persona) in enumerate(df_comisiones.iterrows()):
-            # Cargamos la plantilla limpia para esta persona
-            temp_doc = Document(plantilla_path)
+        
+        for idx, persona in df_comisiones.iterrows():
+            doc = Document(plantilla_path)
             
-            # Preparar datos
-            datos = {
-                '<<OFICIO>>': f"{oficio_actual}/52/2026",
-                '<<FECHA>>': f"{fecha_doc.day} de {meses[fecha_doc.month]} de {fecha_doc.year}",
-                '<<NOMBRE_COMPLETO>>': str(persona.get('nombre_completo', '')),
-                '<<FECHA_INICIO>>': f"{fecha_inicio.day} de {meses[fecha_inicio.month]} de {fecha_inicio.year}",
-                '<<FECHA_FIN>>': f"{fecha_fin.day} de {meses[fecha_fin.month]} de {fecha_fin.year}",
-                '<<CENTRO_MAESTROS>>': str(persona.get('centro_maestros', '')),
-                '<<DOMICILIO>>': str(persona.get('domicilio', '')),
-                '<<COLONIA>>': str(persona.get('colonia', '')),
-                '<<MUNICIPIO>>': str(persona.get('municipio', ''))
+            # Diccionario de meses en español
+            meses = {
+                1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
+                5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
+                9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
             }
-
-            # REEMPLAZO QUE NO ROMPE EL DISEÑO
-            for p in temp_doc.paragraphs:
-                for clave, valor in datos.items():
-                    if clave in p.text:
-                        for run in p.runs:
-                            if clave in run.text:
-                                run.text = run.text.replace(clave, valor)
-
-            # LÓGICA DE DUPLICACIÓN (Evitar que el legal se repita en cada hoja)
-            # Si no es la última persona, borramos el aviso legal de esta hoja
-            if idx < total - 1:
-                quitar = False
-                for p in list(temp_doc.paragraphs):
-                    if "Este documento puede contener" in p.text:
-                        quitar = True
-                    if quitar:
-                        p._element.getparent().remove(p._element)
-
-            # Unimos al doc_final
-            for element in temp_doc.element.body:
-                if not element.tag.endswith('sectPr'):
-                    doc_final.element.body.append(copy.deepcopy(element))
             
-            # Salto de página para que no se amontonen
-            if idx < total - 1:
-                doc_final.add_page_break()
-
+            # Convertir fechas a español
+            fecha_doc_esp = f"{fecha_doc.day} de {meses[fecha_doc.month]} de {fecha_doc.year}"
+            fecha_inicio_esp = f"{fecha_inicio.day} de {meses[fecha_inicio.month]} de {fecha_inicio.year}"
+            fecha_fin_esp = f"{fecha_fin.day} de {meses[fecha_fin.month]} de {fecha_fin.year}"
+            
+            # Preparar reemplazos
+            reemplazos = {
+                '<<OFICIO>>': f"{oficio_actual}/52/2026",
+                '<<FECHA>>': fecha_doc_esp,
+                '<<NOMBRE_COMPLETO>>': persona['nombre_completo'],
+                '<<FECHA_INICIO>>': fecha_inicio_esp,
+                '<<FECHA_FIN>>': fecha_fin_esp
+            }
+            
+            # Agregar campos específicos según tipo
+            if tipo_comision == "Encargados CM":
+                reemplazos.update({
+                    '<<CENTRO_MAESTROS>>': persona.get('centro_maestros', ''),
+                    '<<DOMICILIO>>': persona.get('domicilio', ''),
+                    '<<COLONIA>>': persona.get('colonia', ''),
+                    '<<MUNICIPIO>>': persona.get('municipio', '')
+                })
+            else:  # Comisiones Generales
+                reemplazos.update({
+                    '<<INSTITUCION>>': persona.get('institucion', ''),
+                    '<<UBICACION>>': persona.get('institucion', ''),  # Puede ser el mismo
+                    '<<DOMICILIO>>': persona.get('domicilio', ''),
+                    '<<COLONIA>>': persona.get('colonia', ''),
+                    '<<MUNICIPIO>>': persona.get('municipio', ''),
+                    '<<CP>>': persona.get('cp', '')
+                })
+            
+            # Reemplazar en párrafos
+            for paragraph in doc.paragraphs:
+                texto_completo = paragraph.text
+                for marcador, valor in reemplazos.items():
+                    if marcador in texto_completo:
+                        texto_completo = texto_completo.replace(marcador, str(valor))
+                
+                if texto_completo != paragraph.text:
+                    for run in paragraph.runs:
+                        run.text = ''
+                    if paragraph.runs:
+                        paragraph.runs[0].text = texto_completo
+            
+            # Reemplazar en tablas si existen
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            texto_completo = paragraph.text
+                            for marcador, valor in reemplazos.items():
+                                if marcador in texto_completo:
+                                    texto_completo = texto_completo.replace(marcador, str(valor))
+                            
+                            if texto_completo != paragraph.text:
+                                for run in paragraph.runs:
+                                    run.text = ''
+                                if paragraph.runs:
+                                    paragraph.runs[0].text = texto_completo
+            
+            docs.append(doc)
             oficio_actual += 1
-
-        output_path = os.path.join(os.path.dirname(__file__), f'Comisiones_{oficio_inicial}.docx')
+        
+        # Combinar documentos SIN docxcompose
+        doc_final = docs[0]
+        
+        for doc in docs[1:]:
+            # Copiar TODO excepto sectPr
+            for element in list(doc.element.body):
+                if element.tag.endswith('sectPr'):
+                    continue
+                doc_final.element.body.append(element)
+        
+        # Guardar
+        tipo_archivo = "Encargados_CM" if tipo_comision == "Encargados CM" else "Comisiones_Generales"
+        output_path = os.path.join(os.path.dirname(__file__), f'{tipo_archivo}_{oficio_inicial}.docx')
         doc_final.save(output_path)
+        
         return output_path
-
+        
     except Exception as e:
         import traceback
-        raise Exception(f"Error: {str(e)}\n{traceback.format_exc()}")
+        error_completo = traceback.format_exc()
+        raise Exception(f"Error al generar comisiones: {str(e)}\n\nStack trace:\n{error_completo}")
 
 # ============= LOGIN =============
 if 'logged_in' not in st.session_state:
