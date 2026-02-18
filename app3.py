@@ -679,7 +679,7 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
             else:  # Comisiones Generales
                 reemplazos.update({
                     '<<INSTITUCION>>': persona.get('institucion', ''),
-                    '<<UBICACION>>': persona.get('institucion', ''),
+                    '<<UBICACION>>': persona.get('institucion', ''),  # Puede ser el mismo
                     '<<DOMICILIO>>': persona.get('domicilio', ''),
                     '<<COLONIA>>': persona.get('colonia', ''),
                     '<<MUNICIPIO>>': persona.get('municipio', ''),
@@ -718,11 +718,11 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
             docs.append(doc)
             oficio_actual += 1
         
-        # Combinar documentos - CREAR DOCUMENTO VACÍO
-        doc_final = Document()
+        # Combinar documentos SIN docxcompose
+        doc_final = docs[0]
         
-        # Agregar TODOS los documentos
-        for doc in docs:
+        for doc in docs[1:]:
+            # Copiar TODO excepto sectPr
             for element in list(doc.element.body):
                 if element.tag.endswith('sectPr'):
                     continue
