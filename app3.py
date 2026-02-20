@@ -509,9 +509,13 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
     docs = []
     
     for nombre_empleado in empleados_seleccionados:
-        # Abrir plantilla NUEVA para cada empleado
-        doc = Document(plantilla_path)
-        emp = df_constancias[df_constancias['Nombre Completo'] == nombre_empleado].iloc[0]
+        # Filtrar TODOS los registros de este empleado
+        registros_empleado = df_constancias[df_constancias['Nombre Completo'] == nombre_empleado]
+        
+        # Generar una constancia por CADA registro
+        for idx, emp in registros_empleado.iterrows():
+            # Abrir plantilla NUEVA para cada registro
+            doc = Document(plantilla_path)
         
         tel_personal = str(emp['TEL. PERSONAL'])
         if '.' in tel_personal:
