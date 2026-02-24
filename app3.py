@@ -1471,22 +1471,25 @@ with tab3:
         with col2:
             with col2:
                 if st.button("🔄 Actualizar Datos"):
-                    # Calcular días solicitados (registros con "Aprobado Por" no vacío)
+                    # Calcular días solicitados
                     df_solicitudes_aprobadas = df_solicitudes[df_solicitudes['Aprobado Por'].notna() & (df_solicitudes['Aprobado Por'] != '')]
                     conteo_dias = df_solicitudes_aprobadas.groupby('RFC')['Dias Solicitados'].sum().to_dict()
                     
-                    # Escribir a Google Sheets
+                    # Preparar datos para actualización MASIVA
                     client = st.session_state['client']
                     spreadsheet = client.open(st.session_state['spreadsheet_name'])
                     sheet_empleados = spreadsheet.worksheet("Empleados")
                     
-                    todos_rfcs = sheet_empleados.col_values(2)  # Columna B = RFC
+                    todos_rfcs = sheet_empleados.col_values(2)[1:]  # Columna B = RFC (sin header)
                     
-                    for i, rfc in enumerate(todos_rfcs[1:], start=2):
-                        dias = conteo_dias.get(rfc, 0)
-                        sheet_empleados.update_cell(i, 13, dias)  # Columna 13 = DIAS DISPONIBLES
+                    # Crear lista de valores para columna 13
+                    valores_actualizar = [[conteo_dias.get(rfc, 0)] for rfc in todos_rfcs]
                     
-                    st.success("✅ Días solicitados actualizados en Sheets")
+                    # Actualizar TODO de una vez (1 sola llamada API)
+                    rango = f'M2:M{len(valores_actualizar) + 1}'  # M = columna 13
+                    sheet_empleados.update(rango, valores_actualizar)
+                    
+                    st.success("✅ Días actualizados")
                     st.rerun()
         
         df_filtrado = df_empleados.copy()
