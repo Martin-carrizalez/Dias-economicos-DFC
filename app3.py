@@ -1471,9 +1471,9 @@ with tab3:
         with col2:
             with col2:
                 if st.button("🔄 Actualizar Datos"):
-                    # Calcular días solicitados por RFC
-                    df_solicitudes_aprobadas = df_solicitudes[df_solicitudes['ESTADO'] == 'Aprobado']
-                    conteo_dias = df_solicitudes_aprobadas.groupby('RFC')['DIAS_SOLICITADOS'].sum().to_dict()
+                    # Calcular días solicitados (registros con "Aprobado Por" no vacío)
+                    df_solicitudes_aprobadas = df_solicitudes[df_solicitudes['Aprobado Por'].notna() & (df_solicitudes['Aprobado Por'] != '')]
+                    conteo_dias = df_solicitudes_aprobadas.groupby('RFC')['Dias Solicitados'].sum().to_dict()
                     
                     # Escribir a Google Sheets
                     client = st.session_state['client']
@@ -1482,9 +1482,9 @@ with tab3:
                     
                     todos_rfcs = sheet_empleados.col_values(2)  # Columna B = RFC
                     
-                    for i, rfc in enumerate(todos_rfcs[1:], start=2):  # Empezar en fila 2
+                    for i, rfc in enumerate(todos_rfcs[1:], start=2):
                         dias = conteo_dias.get(rfc, 0)
-                        sheet_empleados.update_cell(i, 13, dias)  # Columna 13 = DÍAS SOLICITADOS
+                        sheet_empleados.update_cell(i, 13, dias)  # Columna 13 = DIAS DISPONIBLES
                     
                     st.success("✅ Días solicitados actualizados en Sheets")
                     st.rerun()
