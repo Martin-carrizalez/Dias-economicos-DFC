@@ -517,66 +517,66 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
             # Abrir plantilla NUEVA para cada registro
             doc = Document(plantilla_path)
         
-        tel_personal = str(emp['TEL. PERSONAL'])
-        if '.' in tel_personal:
-            try:
-                tel_personal = f"{int(float(tel_personal)):010d}"
-            except:
-                pass
-        
-        reemplazos = {
-            '<<QUINCENA>>': str(num_quincena),
-            '<<AÑO>>': str(año),
-            '<<FECHA>>': fecha_texto,
-            '<<APELLIDO_PATERNO>>': str(emp['Apellido paterno']),
-            '<<APELLIDO_MATERNO>>': str(emp['Apellido Materno']),
-            '<<NOMBRE>>': str(emp['Nombre(s)']),
-            '<<RFC>>': str(emp['RFC']),
-            '<<FECHA_INGRESO>>': str(emp['INGRESOA LA SEJ']),
-            '<<SE_DESEMPENA_EN>>': str(emp['Se desempeña en']),
-            '<<DESCRIPCION_PUESTO>>': str(emp['Descripción de puesto']),
-            '<<CCT>>': str(emp['C.C.T. ADSCRIPCIÓN']),
-            '<<CLAVE_PRESUPUESTAL>>': str(emp['Clave Presupuestal']),
-            '<<TEL_PERSONAL>>': tel_personal,
-            '<<TEL_EXT>>': str(emp['TEL. ext.']),
-            '<<HOJA>>': str(int(emp['Hoja']))
-        }
-        
-        # Reemplazar en párrafos
-        for paragraph in doc.paragraphs:
-            texto_completo = paragraph.text
-            for marcador, valor in reemplazos.items():
-                if marcador in texto_completo:
-                    texto_completo = texto_completo.replace(marcador, valor)
+            tel_personal = str(emp['TEL. PERSONAL'])
+            if '.' in tel_personal:
+                try:
+                    tel_personal = f"{int(float(tel_personal)):010d}"
+                except:
+                    pass
             
-            # Actualizar el texto
-            if texto_completo != paragraph.text:
-                for run in paragraph.runs:
-                    run.text = ''
-                if paragraph.runs:
-                    paragraph.runs[0].text = texto_completo
-                else:
-                    paragraph.add_run(texto_completo)
-        
-        # Reemplazar en tablas
-        for table in doc.tables:
-            for row in table.rows:
-                for cell in row.cells:
-                    for paragraph in cell.paragraphs:
-                        texto_completo = paragraph.text
-                        for marcador, valor in reemplazos.items():
-                            if marcador in texto_completo:
-                                texto_completo = texto_completo.replace(marcador, valor)
-                        
-                        if texto_completo != paragraph.text:
-                            for run in paragraph.runs:
-                                run.text = ''
-                            if paragraph.runs:
-                                paragraph.runs[0].text = texto_completo
-                            else:
-                                paragraph.add_run(texto_completo)
-        
-        docs.append(doc)
+            reemplazos = {
+                '<<QUINCENA>>': str(num_quincena),
+                '<<AÑO>>': str(año),
+                '<<FECHA>>': fecha_texto,
+                '<<APELLIDO_PATERNO>>': str(emp['Apellido paterno']),
+                '<<APELLIDO_MATERNO>>': str(emp['Apellido Materno']),
+                '<<NOMBRE>>': str(emp['Nombre(s)']),
+                '<<RFC>>': str(emp['RFC']),
+                '<<FECHA_INGRESO>>': str(emp['INGRESOA LA SEJ']),
+                '<<SE_DESEMPENA_EN>>': str(emp['Se desempeña en']),
+                '<<DESCRIPCION_PUESTO>>': str(emp['Descripción de puesto']),
+                '<<CCT>>': str(emp['C.C.T. ADSCRIPCIÓN']),
+                '<<CLAVE_PRESUPUESTAL>>': str(emp['Clave Presupuestal']),
+                '<<TEL_PERSONAL>>': tel_personal,
+                '<<TEL_EXT>>': str(emp['TEL. ext.']),
+                '<<HOJA>>': str(int(emp['Hoja']))
+            }
+            
+            # Reemplazar en párrafos
+            for paragraph in doc.paragraphs:
+                texto_completo = paragraph.text
+                for marcador, valor in reemplazos.items():
+                    if marcador in texto_completo:
+                        texto_completo = texto_completo.replace(marcador, valor)
+                
+                # Actualizar el texto
+                if texto_completo != paragraph.text:
+                    for run in paragraph.runs:
+                        run.text = ''
+                    if paragraph.runs:
+                        paragraph.runs[0].text = texto_completo
+                    else:
+                        paragraph.add_run(texto_completo)
+            
+            # Reemplazar en tablas
+            for table in doc.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        for paragraph in cell.paragraphs:
+                            texto_completo = paragraph.text
+                            for marcador, valor in reemplazos.items():
+                                if marcador in texto_completo:
+                                    texto_completo = texto_completo.replace(marcador, valor)
+                            
+                            if texto_completo != paragraph.text:
+                                for run in paragraph.runs:
+                                    run.text = ''
+                                if paragraph.runs:
+                                    paragraph.runs[0].text = texto_completo
+                                else:
+                                    paragraph.add_run(texto_completo)
+            
+            docs.append(doc)
     
     # Combinar documentos SIN docxcompose
     doc_final = docs[0]
