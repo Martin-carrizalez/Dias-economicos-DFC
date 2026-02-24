@@ -1471,25 +1471,33 @@ with tab3:
         with col2:
             with col2:
                 if st.button("🔄 Actualizar Datos"):
-                    # Calcular días solicitados
+                    # Calcular días USADOS (aprobados)
                     df_solicitudes_aprobadas = df_solicitudes[df_solicitudes['Aprobado Por'].notna() & (df_solicitudes['Aprobado Por'] != '')]
-                    conteo_dias = df_solicitudes_aprobadas.groupby('RFC')['Dias Solicitados'].sum().to_dict()
+                    dias_usados = df_solicitudes_aprobadas.groupby('RFC')['Dias Solicitados'].sum().to_dict()
                     
-                    # Preparar datos para actualización MASIVA
+                    # Actualizar
                     client = st.session_state['client']
                     spreadsheet = client.open(st.session_state['spreadsheet_name'])
                     sheet_empleados = spreadsheet.worksheet("Empleados")
                     
-                    todos_rfcs = sheet_empleados.col_values(2)[1:]  # Columna B = RFC (sin header)
+                    todos_rfcs = sheet_empleados.col_values(2)[1:]  # Columna B = RFC
+                    dias_totales = sheet_empleados.col_values(14)[1:]  # Columna N = DIAS TOTALES
                     
-                    # Crear lista de valores para columna 13
-                    valores_actualizar = [[conteo_dias.get(rfc, 0)] for rfc in todos_rfcs]
+                    # DISPONIBLES = TOTALES - USADOS
+                    valores_actualizar = []
+                    for rfc, total in zip(todos_rfcs, dias_totales):
+                        usados = dias_usados.get(rfc, 0)
+                        try:
+                            disponibles = int(float(total)) - usados
+                        except:
+                            disponibles = int(float(total)) if total else 0
+                        valores_actualizar.append([disponibles])
                     
-                    # Actualizar TODO de una vez (1 sola llamada API)
-                    rango = f'M2:M{len(valores_actualizar) + 1}'  # M = columna 13
+                    # Escribir en columna M (13)
+                    rango = f'M2:M{len(valores_actualizar) + 1}'
                     sheet_empleados.update(rango, valores_actualizar)
                     
-                    st.success("✅ Días actualizados")
+                    st.success("✅ Días disponibles actualizados")
                     st.rerun()
         
         df_filtrado = df_empleados.copy()
