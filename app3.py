@@ -1469,8 +1469,25 @@ with tab3:
         with col1:
             busqueda = st.text_input("🔍 Buscar por nombre, RFC o puesto")
         with col2:
-            if st.button("🔄 Actualizar Datos"):
-                st.rerun()
+            with col2:
+                if st.button("🔄 Actualizar Datos"):
+                    # Calcular días solicitados por RFC
+                    df_solicitudes_aprobadas = df_solicitudes[df_solicitudes['ESTADO'] == 'Aprobado']
+                    conteo_dias = df_solicitudes_aprobadas.groupby('RFC')['DIAS_SOLICITADOS'].sum().to_dict()
+                    
+                    # Escribir a Google Sheets
+                    client = st.session_state['client']
+                    spreadsheet = client.open(st.session_state['spreadsheet_name'])
+                    sheet_empleados = spreadsheet.worksheet("Empleados")
+                    
+                    todos_rfcs = sheet_empleados.col_values(2)  # Columna B = RFC
+                    
+                    for i, rfc in enumerate(todos_rfcs[1:], start=2):  # Empezar en fila 2
+                        dias = conteo_dias.get(rfc, 0)
+                        sheet_empleados.update_cell(i, 13, dias)  # Columna 13 = DÍAS SOLICITADOS
+                    
+                    st.success("✅ Días solicitados actualizados en Sheets")
+                    st.rerun()
         
         df_filtrado = df_empleados.copy()
         if busqueda:
