@@ -507,7 +507,7 @@ def generar_constancias_word(df_constancias, empleados_seleccionados, num_quince
     
     # Lista para guardar documentos individuales
     docs = []
-    nombres_unicos = list(set(empleados_seleccionados))
+    nombres_unicos = list(dict.fromkeys(empleados_seleccionados))
 
     for nombre_empleado in nombres_unicos:
         # Filtrar TODOS los registros de este empleado
