@@ -676,6 +676,7 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
             # Agregar campos específicos según tipo
             if tipo_comision == "Encargados CM":
                 reemplazos.update({
+                    '<<INSTITUCION>>': persona.get('institucion', ''),
                     '<<CENTRO_MAESTROS>>': persona.get('centro_maestros', ''),
                     '<<DOMICILIO>>': persona.get('domicilio', ''),
                     '<<COLONIA>>': persona.get('colonia', ''),
