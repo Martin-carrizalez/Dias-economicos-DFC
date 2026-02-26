@@ -705,6 +705,8 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
                     if paragraph.runs:
                         paragraph.runs[0].text = texto_completo
                         paragraph.runs[0].bold = False  # Quitar negritas
+                        if '<<NOMBRE_COMPLETO>>' not in paragraph.text:
+                            paragraph.runs[0].bold = False
             
             # Reemplazar en tablas si existen
             for table in doc.tables:
