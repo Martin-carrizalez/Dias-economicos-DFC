@@ -700,13 +700,13 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
                         texto_completo = texto_completo.replace(marcador, str(valor))
                 
                 if texto_completo != paragraph.text:
+                    tiene_nombre = '<<NOMBRE_COMPLETO>>' in paragraph.text
                     for run in paragraph.runs:
                         run.text = ''
                     if paragraph.runs:
                         paragraph.runs[0].text = texto_completo
-                        paragraph.runs[0].bold = False  # Quitar negritas
-                        if '<<NOMBRE_COMPLETO>>' not in paragraph.text:
-                            paragraph.runs[0].bold = False
+                        # Poner negritas SOLO si era el nombre
+                        paragraph.runs[0].bold = tiene_nombre
             
             # Reemplazar en tablas si existen
             for table in doc.tables:
