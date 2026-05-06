@@ -895,6 +895,47 @@ elif tipo_usuario == 'visor_secretarias':
     
     st.dataframe(df_vista, use_container_width=True, hide_index=True)
     st.stop()
+    
+if st.button("Ingresar", use_container_width=True, type="primary"):
+            # Primero verificar si es usuario admin/visor normal
+            valido, nombre, tipo = verificar_login(usuario, password)
+            
+            if valido:
+                st.session_state['logged_in'] = True
+                st.session_state['usuario'] = usuario
+                st.session_state['nombre_usuario'] = nombre
+                st.session_state['tipo_usuario'] = tipo
+                
+                fechas_limite_login = verificar_fechas_limite()
+                if fechas_limite_login['criticas']:
+                    st.session_state['mostrar_alerta_login'] = True
+                    st.session_state['alertas_criticas'] = fechas_limite_login['criticas']
+                
+                st.rerun()
+            else:
+                # Si no es usuario normal, intentar autenticación CM
+                client = conectar_sheets()
+                if client:
+                    spreadsheet = client.open("Dias_Economicos_Formacion_Continua")
+                    df_asesores_cm = pd.DataFrame(spreadsheet.worksheet("Asesores_CM").get_all_records(numericise_ignore=['all']))
+                    
+                    responsable = df_asesores_cm[
+                        (df_asesores_cm['ROL'] == 'RESPONSABLE CM') &
+                        (df_asesores_cm['CORREO_INSTITUCIONAL'] == usuario) &
+                        (df_asesores_cm['CONTRASEÑA'].astype(str) == password)
+                    ]
+                    
+                    if len(responsable) > 0:
+                        st.session_state['logged_in'] = True
+                        st.session_state['tipo_usuario'] = 'responsable_cm'
+                        st.session_state['responsable_cm_auth'] = True
+                        st.session_state['centro_maestros'] = responsable.iloc[0]['CENTRO_MAESTROS']
+                        st.session_state['nombre_usuario'] = responsable.iloc[0]['NOMBRE_COMPLETO']
+                        st.rerun()
+                    else:
+                        st.error("❌ Usuario o contraseña incorrectos")
+                else:
+                    st.error("❌ Usuario o contraseña incorrectos")  
 
 # Si es admin, continúa con la app normal
 # ============= MAIN APP =============
@@ -1550,6 +1591,32 @@ with tab3:
 # TAB 4: ESTATUS INDIVIDUAL
 with tab4:
     st.header("📊 Estatus Individual de Empleados")
+    # PASO 3: FILTRO PARA RESPONSABLES CM
+    if st.session_state.get('tipo_usuario') == 'responsable_cm':
+        if not st.session_state.get('responsable_cm_auth'):
+            st.warning("⚠️ No autenticado")
+            st.stop()
+        
+        # Cargar hoja de asesores CM
+        client = st.session_state['client']
+        spreadsheet = client.open(st.session_state['spreadsheet_name'])
+        df_asesores_cm = pd.DataFrame(spreadsheet.worksheet("Asesores_CM").get_all_records(numericise_ignore=['all']))
+        
+        # Filtrar solo asesores de su CM
+        asesores_permitidos = df_asesores_cm[
+            df_asesores_cm['CENTRO_MAESTROS'] == st.session_state['centro_maestros']
+        ]['NOMBRE_COMPLETO'].tolist()
+        
+        # Filtrar empleados
+        df_empleados = df_empleados[
+            df_empleados.apply(
+                lambda row: f"{row['PATERNO']} {row['MATERNO']} {row['NOMBRE']}" in asesores_permitidos,
+                axis=1
+            )
+        ]
+        
+        st.info(f"🏫 Centro: {st.session_state['centro_maestros']} | 👤 {st.session_state['nombre_responsable']}")
+
     
     if len(df_empleados) > 0:
         busqueda = st.text_input("🔍 Buscar empleado", key="busq_individual")
