@@ -664,14 +664,22 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
             fecha_inicio_esp = f"{fecha_inicio.day} de {meses[fecha_inicio.month]} de {fecha_inicio.year}"
             fecha_fin_esp = f"{fecha_fin.day} de {meses[fecha_fin.month]} de {fecha_fin.year}"
             
-            # Preparar reemplazos
-            reemplazos = {
-                '<<OFICIO>>': f"{oficio_actual}/52/2026",
+            # ── Marcadores DINÁMICOS: cada columna del Sheet Comisiones queda
+            # disponible como <<NOMBRE_COLUMNA>> (mayúsculas, espacios → _).
+            # Para agregar un dato nuevo: columna al Sheet + marcador a la
+            # plantilla. Sin tocar código. ──
+            reemplazos = {}
+            for _col, _val in persona.items():
+                _marc = "<<" + str(_col).strip().upper().replace(" ", "_") + ">>"
+                reemplazos[_marc] = "" if pd.isna(_val) else str(_val)
+            # Marcadores fijos (pisan a los dinámicos si coinciden)
+            reemplazos.update({
+                '<<OFICIO>>': f"{oficio_actual}/52/{fecha_doc.year}",
                 '<<FECHA>>': fecha_doc_esp,
                 '<<NOMBRE_COMPLETO>>': persona['nombre_completo'],
                 '<<FECHA_INICIO>>': fecha_inicio_esp,
                 '<<FECHA_FIN>>': fecha_fin_esp
-            }
+            })
             
             # Agregar campos específicos según tipo
             if tipo_comision == "Encargados CM":
@@ -705,8 +713,11 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
                         run.text = ''
                     if paragraph.runs:
                         paragraph.runs[0].text = texto_completo
-                        # Poner negritas SOLO si era el nombre
-                        paragraph.runs[0].bold = tiene_nombre
+                        # Negritas SOLO al nombre. NUNCA asignar False:
+                        # eso quitaba las negritas que la plantilla ya tenía
+                        # en encabezados con <<OFICIO>>, <<FECHA>>, etc.
+                        if tiene_nombre:
+                            paragraph.runs[0].bold = True
             
             # Reemplazar en tablas si existen
             for table in doc.tables:
@@ -728,15 +739,38 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
             docs.append(doc)
             oficio_actual += 1
         
-        # Combinar documentos SIN docxcompose
+        # Combinar documentos SIN docxcompose — CADA COMISIÓN EN SU PROPIA PÁGINA
+        from docx.oxml import OxmlElement
+        from docx.oxml.ns import qn
+
         doc_final = docs[0]
-        
+        _body = doc_final.element.body
+        # Insertar ANTES del sectPr (orden válido del XML de Word)
+        _sectpr = _body.find(qn('w:sectPr'))
+
+        def _insertar(el):
+            if _sectpr is not None:
+                _sectpr.addprevious(el)
+            else:
+                _body.append(el)
+
+        def _salto_pagina():
+            _p = OxmlElement('w:p')
+            _r = OxmlElement('w:r')
+            _br = OxmlElement('w:br')
+            _br.set(qn('w:type'), 'page')
+            _r.append(_br)
+            _p.append(_r)
+            return _p
+
         for doc in docs[1:]:
-            # Copiar TODO excepto sectPr
+            # ESTE ERA EL BUG: sin salto de página, la siguiente comisión
+            # arrancaba a media página. Ahora cada una inicia en hoja nueva.
+            _insertar(_salto_pagina())
             for element in list(doc.element.body):
                 if element.tag.endswith('sectPr'):
                     continue
-                doc_final.element.body.append(element)
+                _insertar(element)
         
         # Guardar
         tipo_archivo = "Encargados_CM" if tipo_comision == "Encargados CM" else "Comisiones_Generales"
@@ -2122,7 +2156,7 @@ with tab7:
                 oficio_temp = oficio_inicial
                 for nombre in personas_seleccionadas:
                     preview_data.append({
-                        'Oficio': f"{oficio_temp}/52/2026",
+                        'Oficio': f"{oficio_temp}/52/{fecha_doc.year}",
                         'Nombre': nombre
                     })
                     oficio_temp += 1
