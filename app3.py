@@ -629,41 +629,188 @@ def convertir_word_a_pdf(word_path):
         st.error(f"No se pudo ejecutar la conversión: {e}")
         return None
     
+# ══════════════════════════════════════════════════════════════════════════
+# REDACCIÓN DINÁMICA DE LA UBICACIÓN  (arregla las comas huérfanas)
+#
+# Problema: hay Centros de Maestros que SÍ están dentro de una institución
+# (UPN, Escuela Normal, etc.) y otros que NO. Con el marcador fijo
+# <<INSTITUCION>> en la plantilla, los que no tienen institución salían así:
+#       "...al CENTRO DE MAESTROS 14-05, ubicado , Calle Juárez..."
+#
+# Word NO puede decidir esto solo (un .docx no tiene condicionales reales).
+# Por eso la frase completa se arma AQUÍ y se inserta en la plantilla como
+# un único marcador: <<UBICACION>>
+# ══════════════════════════════════════════════════════════════════════════
+
+import re
+
+# Palabras con las que puede iniciar un domicilio y que YA indican el tipo de
+# vialidad: si el dato ya dice "Av. Vallarta", no anteponemos "calle".
+_VIALIDADES = (
+    'calle', 'callejon', 'callejón', 'av', 'avenida', 'blvd', 'boulevard',
+    'bulevar', 'calz', 'calzada', 'carretera', 'camino', 'prolongacion',
+    'prolongación', 'andador', 'privada', 'circuito', 'paseo', 'periferico',
+    'periférico', 'glorieta', 'retorno', 'cerrada', 'eje', 'via', 'vía'
+)
+
+# Igual para el asentamiento: si ya dice "Fraccionamiento X", no anteponemos
+# "colonia".
+_ASENTAMIENTOS = (
+    'colonia', 'col', 'fraccionamiento', 'fracc', 'barrio', 'unidad',
+    'residencial', 'ejido', 'ampliacion', 'ampliación', 'delegacion',
+    'delegación', 'zona', 'sector', 'conjunto', 'rancheria', 'ranchería'
+)
+
+_VACIOS = ('', 'nan', 'none', 'null', 'n/a', 'na', '-', '--', 'sin dato', 'sin datos')
+
+
+def valor_limpio(persona, columna):
+    """Devuelve el valor de una columna como texto limpio.
+
+    Regresa '' si la columna no existe, viene vacía, o trae NaN / 'nan' /
+    'N/A'. Esto evita que se imprima literalmente la palabra 'nan' en el
+    oficio, que era el otro error que aparecía.
+    """
+    try:
+        valor = persona.get(columna, '')
+    except Exception:
+        valor = ''
+
+    if valor is None:
+        return ''
+    try:
+        if pd.isna(valor):
+            return ''
+    except (TypeError, ValueError):
+        pass
+
+    texto = str(valor).strip()
+    if texto.lower() in _VACIOS:
+        return ''
+    return texto
+
+
+def _primera_palabra(texto):
+    """Primera palabra en minúsculas y sin puntuación, para comparar."""
+    if not texto:
+        return ''
+    return texto.strip().split()[0].strip('.,;:').lower()
+
+
+def _frase_domicilio(domicilio):
+    """'Juárez 123' -> 'la calle Juárez 123'   |   'Av. Vallarta 1234' -> 'Av. Vallarta 1234'"""
+    if not domicilio:
+        return ''
+    if _primera_palabra(domicilio) in _VIALIDADES:
+        return domicilio
+    return 'la calle ' + domicilio
+
+
+def _frase_colonia(colonia):
+    """'Centro' -> 'colonia Centro'   |   'Fracc. Los Robles' -> 'Fracc. Los Robles'"""
+    if not colonia:
+        return ''
+    if _primera_palabra(colonia) in _ASENTAMIENTOS:
+        return colonia
+    return 'colonia ' + colonia
+
+
+def construir_ubicacion(persona):
+    """Arma la frase de ubicación según los datos que EXISTAN.
+
+    Casos que resuelve:
+      CON institución:
+        'ubicado en la Universidad Pedagógica Nacional Unidad 141,
+         con domicilio en la calle Juárez 123, colonia Centro,
+         en el municipio de Guadalajara, Jalisco'
+      SIN institución:
+        'ubicado en la calle Juárez 123, colonia Centro,
+         en el municipio de Guadalajara, Jalisco'
+      Sin domicilio, sin colonia, etc.: simplemente omite esa parte,
+      sin dejar comas sueltas.
+    """
+    institucion = valor_limpio(persona, 'institucion')
+    domicilio = valor_limpio(persona, 'domicilio')
+    colonia = valor_limpio(persona, 'colonia')
+    municipio = valor_limpio(persona, 'municipio')
+
+    partes = []
+
+    if institucion:
+        # Si en el Sheet ya viene con preposición ("en la UPN...", "dentro de
+        # la Normal...") no la duplicamos.
+        if _primera_palabra(institucion) in ('en', 'dentro', 'al', 'a'):
+            partes.append('ubicado ' + institucion)
+        else:
+            partes.append('ubicado en ' + institucion)
+        if domicilio:
+            partes.append('con domicilio en ' + _frase_domicilio(domicilio))
+    elif domicilio:
+        partes.append('ubicado en ' + _frase_domicilio(domicilio))
+
+    if colonia:
+        partes.append(_frase_colonia(colonia))
+
+    if municipio:
+        partes.append('en el municipio de ' + municipio + ', Jalisco')
+    elif partes:
+        partes.append('en el estado de Jalisco')
+
+    return ', '.join(partes)
+
+
+def limpiar_redaccion(texto):
+    """Red de seguridad: quita comas huérfanas y espacios dobles que deje
+    cualquier marcador vacío (sirve también para la plantilla de Comisiones
+    Generales). NO toca los saltos de línea del documento."""
+    t = texto
+    t = re.sub(r'[ \t]*\(\s*\)', '', t)          # paréntesis vacíos
+    t = re.sub(r'[ \t]+([,;:.])', r'\1', t)      # " ," -> ","
+    t = re.sub(r'(,[ \t]*){2,}', ', ', t)        # ", ," -> ", "
+    t = re.sub(r',[ \t]*\.', '.', t)             # ", ." -> "."
+    t = re.sub(r'(?<!\.)\.[ \t]*\.(?!\.)', '.', t)      # ".." -> "."
+    t = re.sub(r'([,;:.])(?=[^\s\d.,;:])', r'\1 ', t)  # falta espacio tras coma
+    t = re.sub(r'[ \t]{2,}', ' ', t)             # espacios dobles
+    t = re.sub(r'[ \t]+\n', '\n', t)
+    t = re.sub(r'\n[ \t]+', '\n', t)
+    return t.strip(' \t')
+
+
 def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_doc, fecha_inicio, fecha_fin):
     """Genera documento Word de comisiones"""
     from docx import Document
     from datetime import datetime
     import os
-    
+
     try:
         # Seleccionar plantilla según tipo
         if tipo_comision == "Encargados CM":
             plantilla_path = os.path.join(os.path.dirname(__file__), 'templates', 'PLANTILLA_ENCARGADOS_CM.docx')
         else:
             plantilla_path = os.path.join(os.path.dirname(__file__), 'templates', 'PLANTILLA_COMISIONES_GENERALES.docx')
-        
+
         if not os.path.exists(plantilla_path):
             raise FileNotFoundError(f"Plantilla no encontrada: {plantilla_path}")
-        
+
         # Generar un documento por cada persona
         docs = []
         oficio_actual = oficio_inicial
-        
+
         for idx, persona in df_comisiones.iterrows():
             doc = Document(plantilla_path)
-            
+
             # Diccionario de meses en español
             meses = {
                 1: 'enero', 2: 'febrero', 3: 'marzo', 4: 'abril',
                 5: 'mayo', 6: 'junio', 7: 'julio', 8: 'agosto',
                 9: 'septiembre', 10: 'octubre', 11: 'noviembre', 12: 'diciembre'
             }
-            
+
             # Convertir fechas a español
             fecha_doc_esp = f"{fecha_doc.day} de {meses[fecha_doc.month]} de {fecha_doc.year}"
             fecha_inicio_esp = f"{fecha_inicio.day} de {meses[fecha_inicio.month]} de {fecha_inicio.year}"
             fecha_fin_esp = f"{fecha_fin.day} de {meses[fecha_fin.month]} de {fecha_fin.year}"
-            
+
             # ── Marcadores DINÁMICOS: cada columna del Sheet Comisiones queda
             # disponible como <<NOMBRE_COLUMNA>> (mayúsculas, espacios → _).
             # Para agregar un dato nuevo: columna al Sheet + marcador a la
@@ -672,41 +819,43 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
             for _col, _val in persona.items():
                 _marc = "<<" + str(_col).strip().upper().replace(" ", "_") + ">>"
                 reemplazos[_marc] = "" if pd.isna(_val) else str(_val)
+
             # Marcadores fijos (pisan a los dinámicos si coinciden)
             reemplazos.update({
                 '<<OFICIO>>': f"{oficio_actual}/52/{fecha_doc.year}",
                 '<<FECHA>>': fecha_doc_esp,
-                '<<NOMBRE_COMPLETO>>': persona['nombre_completo'],
+                '<<NOMBRE_COMPLETO>>': valor_limpio(persona, 'nombre_completo'),
                 '<<FECHA_INICIO>>': fecha_inicio_esp,
                 '<<FECHA_FIN>>': fecha_fin_esp
             })
-            
-            # Agregar campos específicos según tipo
-            if tipo_comision == "Encargados CM":
-                reemplazos.update({
-                    '<<INSTITUCION>>': persona.get('institucion', ''),
-                    '<<CENTRO_MAESTROS>>': persona.get('centro_maestros', ''),
-                    '<<DOMICILIO>>': persona.get('domicilio', ''),
-                    '<<COLONIA>>': persona.get('colonia', ''),
-                    '<<MUNICIPIO>>': persona.get('municipio', '')
-                })
-            else:  # Comisiones Generales
-                reemplazos.update({
-                    '<<INSTITUCION>>': persona.get('institucion', ''),
-                    '<<UBICACION>>': persona.get('institucion', ''),  # Puede ser el mismo
-                    '<<DOMICILIO>>': persona.get('domicilio', ''),
-                    '<<COLONIA>>': persona.get('colonia', ''),
-                    '<<MUNICIPIO>>': persona.get('municipio', ''),
-                    '<<CP>>': persona.get('cp', '')
-                })
-            
+
+            # ── AQUÍ SE RESUELVE EL PROBLEMA DE LA INSTITUCIÓN ──
+            # <<UBICACION>> trae la frase ya redactada, con o sin institución.
+            # Los marcadores sueltos se mantienen por compatibilidad, pero la
+            # plantilla debe usar <<UBICACION>>.
+            reemplazos.update({
+                '<<UBICACION>>': construir_ubicacion(persona),
+                '<<INSTITUCION>>': valor_limpio(persona, 'institucion'),
+                '<<CENTRO_MAESTROS>>': valor_limpio(persona, 'centro_maestros'),
+                '<<DOMICILIO>>': valor_limpio(persona, 'domicilio'),
+                '<<COLONIA>>': valor_limpio(persona, 'colonia'),
+                '<<MUNICIPIO>>': valor_limpio(persona, 'municipio'),
+                '<<CP>>': valor_limpio(persona, 'cp')
+            })
+
             # Reemplazar en párrafos
             for paragraph in doc.paragraphs:
                 texto_completo = paragraph.text
+                hubo_cambio = False
                 for marcador, valor in reemplazos.items():
                     if marcador in texto_completo:
                         texto_completo = texto_completo.replace(marcador, str(valor))
-                
+                        hubo_cambio = True
+
+                if hubo_cambio:
+                    # Limpieza de comas/espacios que dejen los datos vacíos
+                    texto_completo = limpiar_redaccion(texto_completo)
+
                 if texto_completo != paragraph.text:
                     tiene_nombre = '<<NOMBRE_COMPLETO>>' in paragraph.text
                     for run in paragraph.runs:
@@ -718,27 +867,31 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
                         # en encabezados con <<OFICIO>>, <<FECHA>>, etc.
                         if tiene_nombre:
                             paragraph.runs[0].bold = True
-            
+
             # Reemplazar en tablas si existen
             for table in doc.tables:
                 for row in table.rows:
                     for cell in row.cells:
                         for paragraph in cell.paragraphs:
                             texto_completo = paragraph.text
+                            hubo_cambio = False
                             for marcador, valor in reemplazos.items():
                                 if marcador in texto_completo:
                                     texto_completo = texto_completo.replace(marcador, str(valor))
-                            
+                                    hubo_cambio = True
+
+                            if hubo_cambio:
+                                texto_completo = limpiar_redaccion(texto_completo)
+
                             if texto_completo != paragraph.text:
                                 for run in paragraph.runs:
                                     run.text = ''
                                 if paragraph.runs:
                                     paragraph.runs[0].text = texto_completo
-                                    
-            
+
             docs.append(doc)
             oficio_actual += 1
-        
+
         # Combinar documentos SIN docxcompose — CADA COMISIÓN EN SU PROPIA PÁGINA
         from docx.oxml import OxmlElement
         from docx.oxml.ns import qn
@@ -754,31 +907,55 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
             else:
                 _body.append(el)
 
-        def _salto_pagina():
-            _p = OxmlElement('w:p')
-            _r = OxmlElement('w:r')
-            _br = OxmlElement('w:br')
-            _br.set(qn('w:type'), 'page')
-            _r.append(_br)
-            _p.append(_r)
-            return _p
+        def _es_parrafo_vacio(el):
+            return el.tag == qn('w:p') and not ''.join(el.itertext()).strip() \
+                and el.find('.//' + qn('w:drawing')) is None \
+                and el.find('.//' + qn('w:pict')) is None
+
+        def _podar_final(body):
+            """Quita los párrafos vacíos del final. Sin esto, la hoja se
+            desbordaba y aparecía una PÁGINA EN BLANCO entre comisión y
+            comisión."""
+            hijos = [e for e in body if not e.tag.endswith('sectPr')]
+            for el in reversed(hijos):
+                if _es_parrafo_vacio(el):
+                    body.remove(el)
+                else:
+                    break
+
+        def _marcar_salto(el):
+            """Salto de página EN el primer párrafo del siguiente oficio
+            (w:pageBreakBefore), no como párrafo aparte: así cada comisión
+            inicia en hoja nueva sin generar hojas vacías."""
+            if el.tag != qn('w:p'):
+                return False
+            pPr = el.find(qn('w:pPr'))
+            if pPr is None:
+                pPr = OxmlElement('w:pPr')
+                el.insert(0, pPr)
+            if pPr.find(qn('w:pageBreakBefore')) is None:
+                pPr.insert(0, OxmlElement('w:pageBreakBefore'))
+            return True
+
+        _podar_final(_body)
 
         for doc in docs[1:]:
-            # ESTE ERA EL BUG: sin salto de página, la siguiente comisión
-            # arrancaba a media página. Ahora cada una inicia en hoja nueva.
-            _insertar(_salto_pagina())
+            _podar_final(doc.element.body)
+            salto_puesto = False
             for element in list(doc.element.body):
                 if element.tag.endswith('sectPr'):
                     continue
+                if not salto_puesto:
+                    salto_puesto = _marcar_salto(element)
                 _insertar(element)
-        
+
         # Guardar
         tipo_archivo = "Encargados_CM" if tipo_comision == "Encargados CM" else "Comisiones_Generales"
         output_path = os.path.join(os.path.dirname(__file__), f'{tipo_archivo}_{oficio_inicial}.docx')
         doc_final.save(output_path)
-        
+
         return output_path
-        
+
     except Exception as e:
         import traceback
         error_completo = traceback.format_exc()
