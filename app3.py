@@ -715,6 +715,81 @@ def _frase_colonia(colonia):
     return 'colonia ' + colonia
 
 
+# Género del sustantivo con el que inicia el nombre de la sede, para escribir
+# "a la Universidad..." vs "al Centro...". Evita el "al Universidad" que salía.
+_SEDE_FEMENINA = (
+    'universidad', 'escuela', 'unidad', 'delegacion', 'delegación', 'secretaria',
+    'secretaría', 'direccion', 'dirección', 'coordinacion', 'coordinación',
+    'region', 'región', 'sede', 'normal', 'benemerita', 'benemérita', 'casa',
+    'biblioteca', 'preparatoria', 'jefatura', 'oficina', 'supervision',
+    'supervision', 'supervisión', 'zona', 'subdireccion', 'subdirección'
+)
+
+
+def _run_destino(paragraph):
+    """Devuelve el run donde se debe escribir el texto ya reemplazado.
+
+    Antes se usaba siempre runs[0]. En la plantilla de Comisiones Generales
+    el primer run es un salto de línea en NEGRITAS, así que TODO el párrafo
+    salía en negritas. Ahora se elige el primer run que realmente tenga
+    texto, que es el que trae el formato correcto del cuerpo.
+    """
+    for run in paragraph.runs:
+        if run.text.strip():
+            return run
+    return paragraph.runs[0] if paragraph.runs else None
+
+
+def construir_sede(persona, tipo_comision):
+    """Nombre de la sede CON su preposición ya contraída.
+
+    'CENTRO DE MAESTROS 14-05'            -> 'al CENTRO DE MAESTROS 14-05'
+    'Universidad Pedagogica Nacional 143' -> 'a la Universidad Pedagogica Nacional 143'
+    'la Escuela Normal Superior'          -> 'a la Escuela Normal Superior'
+    """
+    if tipo_comision == "Encargados CM":
+        nombre = valor_limpio(persona, 'centro_maestros') or valor_limpio(persona, 'institucion')
+    else:
+        nombre = valor_limpio(persona, 'institucion') or valor_limpio(persona, 'centro_maestros')
+
+    if not nombre:
+        return ''
+
+    primera = _primera_palabra(nombre)
+    if primera in ('la', 'las', 'los'):
+        return 'a ' + nombre
+    if primera == 'el':
+        return 'al ' + nombre.split(' ', 1)[1]
+    if primera in _SEDE_FEMENINA:
+        return 'a la ' + nombre
+    return 'al ' + nombre
+
+
+def construir_direccion(persona):
+    """SOLO el domicilio: calle, colonia, municipio y CP. NO incluye la
+    institución (a diferencia de <<UBICACION>>). Se usa en la plantilla de
+    Comisiones Generales, donde la sede YA es la institución y repetirla
+    duplicaba el texto."""
+    domicilio = valor_limpio(persona, 'domicilio')
+    colonia = valor_limpio(persona, 'colonia')
+    municipio = valor_limpio(persona, 'municipio')
+    cp = valor_limpio(persona, 'cp')
+
+    partes = []
+    if domicilio:
+        partes.append('con domicilio en ' + _frase_domicilio(domicilio))
+    if colonia:
+        partes.append(_frase_colonia(colonia))
+    if municipio:
+        partes.append('en el municipio de ' + municipio + ', Jalisco')
+    elif partes:
+        partes.append('en el estado de Jalisco')
+    if cp:
+        partes.append('C.P. ' + cp.replace('C.P.', '').replace('CP', '').strip())
+
+    return ', '.join(partes)
+
+
 def construir_ubicacion(persona):
     """Arma la frase de ubicación según los datos que EXISTAN.
 
@@ -769,7 +844,7 @@ def limpiar_redaccion(texto):
     t = re.sub(r'(,[ \t]*){2,}', ', ', t)        # ", ," -> ", "
     t = re.sub(r',[ \t]*\.', '.', t)             # ", ." -> "."
     t = re.sub(r'(?<!\.)\.[ \t]*\.(?!\.)', '.', t)      # ".." -> "."
-    t = re.sub(r'([,;:.])(?=[^\s\d.,;:])', r'\1 ', t)  # falta espacio tras coma
+    t = re.sub(r'([,;])(?=[^\s\d,;])', r'\1 ', t)  # falta espacio tras coma (no toca C.P.)
     t = re.sub(r'[ \t]{2,}', ' ', t)             # espacios dobles
     t = re.sub(r'[ \t]+\n', '\n', t)
     t = re.sub(r'\n[ \t]+', '\n', t)
@@ -835,6 +910,8 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
             # plantilla debe usar <<UBICACION>>.
             reemplazos.update({
                 '<<UBICACION>>': construir_ubicacion(persona),
+                '<<SEDE>>': construir_sede(persona, tipo_comision),
+                '<<DIRECCION>>': construir_direccion(persona),
                 '<<INSTITUCION>>': valor_limpio(persona, 'institucion'),
                 '<<CENTRO_MAESTROS>>': valor_limpio(persona, 'centro_maestros'),
                 '<<DOMICILIO>>': valor_limpio(persona, 'domicilio'),
@@ -858,15 +935,16 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
 
                 if texto_completo != paragraph.text:
                     tiene_nombre = '<<NOMBRE_COMPLETO>>' in paragraph.text
-                    for run in paragraph.runs:
-                        run.text = ''
-                    if paragraph.runs:
-                        paragraph.runs[0].text = texto_completo
-                        # Negritas SOLO al nombre. NUNCA asignar False:
-                        # eso quitaba las negritas que la plantilla ya tenía
-                        # en encabezados con <<OFICIO>>, <<FECHA>>, etc.
+                    destino = _run_destino(paragraph)
+                    if destino is not None:
+                        for run in paragraph.runs:
+                            run.text = ''
+                        destino.text = texto_completo
+                        # Negritas SOLO al nombre. NUNCA asignar False: eso
+                        # quitaba las negritas que la plantilla ya tenía en
+                        # encabezados con <<OFICIO>>, <<FECHA>>, etc.
                         if tiene_nombre:
-                            paragraph.runs[0].bold = True
+                            destino.bold = True
 
             # Reemplazar en tablas si existen
             for table in doc.tables:
@@ -884,10 +962,11 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
                                 texto_completo = limpiar_redaccion(texto_completo)
 
                             if texto_completo != paragraph.text:
-                                for run in paragraph.runs:
-                                    run.text = ''
-                                if paragraph.runs:
-                                    paragraph.runs[0].text = texto_completo
+                                destino = _run_destino(paragraph)
+                                if destino is not None:
+                                    for run in paragraph.runs:
+                                        run.text = ''
+                                    destino.text = texto_completo
 
             docs.append(doc)
             oficio_actual += 1
