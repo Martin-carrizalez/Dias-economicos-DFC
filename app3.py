@@ -717,6 +717,11 @@ def _frase_colonia(colonia):
 
 # Género del sustantivo con el que inicia el nombre de la sede, para escribir
 # "a la Universidad..." vs "al Centro...". Evita el "al Universidad" que salía.
+_SEDE_MASCULINA = (
+    'centro', 'instituto', 'colegio', 'departamento', 'plantel', 'jardin',
+    'jardín', 'edificio', 'organismo', 'consejo', 'archivo', 'auditorio'
+)
+
 _SEDE_FEMENINA = (
     'universidad', 'escuela', 'unidad', 'delegacion', 'delegación', 'secretaria',
     'secretaría', 'direccion', 'dirección', 'coordinacion', 'coordinación',
@@ -740,42 +745,75 @@ def _run_destino(paragraph):
     return paragraph.runs[0] if paragraph.runs else None
 
 
-def construir_sede(persona, tipo_comision):
-    """Nombre de la sede CON su preposición ya contraída.
-
-    'CENTRO DE MAESTROS 14-05'            -> 'al CENTRO DE MAESTROS 14-05'
-    'Universidad Pedagogica Nacional 143' -> 'a la Universidad Pedagogica Nacional 143'
-    'la Escuela Normal Superior'          -> 'a la Escuela Normal Superior'
+def _con_articulo(nombre):
+    """Antepone el artículo al nombre de una sede, si se puede deducir.
+    'Escuela Normal Superior de Jalisco' -> 'la Escuela Normal Superior...'
+    'Centro de Maestros 1407'            -> 'el Centro de Maestros 1407'
+    'UPN 143'                            -> se deja igual (no se adivina)
     """
-    if tipo_comision == "Encargados CM":
-        nombre = valor_limpio(persona, 'centro_maestros') or valor_limpio(persona, 'institucion')
-    else:
-        nombre = valor_limpio(persona, 'institucion') or valor_limpio(persona, 'centro_maestros')
-
     if not nombre:
         return ''
-
     primera = _primera_palabra(nombre)
-    if primera in ('la', 'las', 'los'):
-        return 'a ' + nombre
-    if primera == 'el':
-        return 'al ' + nombre.split(' ', 1)[1]
+    if primera in ('la', 'las', 'el', 'los'):
+        return nombre
     if primera in _SEDE_FEMENINA:
-        return 'a la ' + nombre
-    return 'al ' + nombre
+        return 'la ' + nombre
+    if primera in _SEDE_MASCULINA:
+        return 'el ' + nombre
+    return nombre
 
 
-def construir_direccion(persona):
-    """SOLO el domicilio: calle, colonia, municipio y CP. NO incluye la
-    institución (a diferencia de <<UBICACION>>). Se usa en la plantilla de
-    Comisiones Generales, donde la sede YA es la institución y repetirla
-    duplicaba el texto."""
+def _nombre_sede(persona):
+    """La sede es SIEMPRE el Centro de Maestros cuando existe; la institución
+    solo funge como sede si no hay Centro de Maestros capturado."""
+    return valor_limpio(persona, 'centro_maestros') or valor_limpio(persona, 'institucion')
+
+
+def construir_sede(persona, tipo_comision=None):
+    """Nombre de la sede CON su preposición ya contraída.
+
+    'Centro de Maestros 1407'  -> 'al Centro de Maestros 1407'
+    'Escuela Normal Superior'  -> 'a la Escuela Normal Superior'
+    """
+    nombre = _nombre_sede(persona)
+    if not nombre:
+        return ''
+    con_art = _con_articulo(nombre)
+    bajo = con_art.lower()
+    if bajo.startswith('el '):
+        return 'al ' + con_art[3:]
+    if bajo.startswith(('la ', 'las ', 'los ')):
+        return 'a ' + con_art
+    return 'al ' + con_art
+
+
+def construir_direccion(persona, tipo_comision=None):
+    """Todo lo que va DESPUÉS del nombre de la sede.
+
+    Incluye la institución que aloja a la sede SOLO cuando es distinta de la
+    sede misma. Así:
+      Centro de Maestros 1407 (dentro de la Normal Superior)
+        -> 'ubicado en la Escuela Normal Superior de Jalisco, con domicilio
+            en la calle Lisboa 488, colonia Santa Elena Estadio, en el
+            municipio de Guadalajara, Jalisco, C.P. 44230'
+      UPN 143 Autlán (la sede ES la institución, no se repite)
+        -> 'con domicilio en la calle Francisco González Bocanegra 177, ...'
+    """
+    institucion = valor_limpio(persona, 'institucion')
+    sede = _nombre_sede(persona)
     domicilio = valor_limpio(persona, 'domicilio')
     colonia = valor_limpio(persona, 'colonia')
     municipio = valor_limpio(persona, 'municipio')
     cp = valor_limpio(persona, 'cp')
 
     partes = []
+
+    if institucion and institucion.strip().lower() != sede.strip().lower():
+        if _primera_palabra(institucion) in ('en', 'dentro', 'al', 'a'):
+            partes.append('ubicado ' + institucion)
+        else:
+            partes.append('ubicado en ' + _con_articulo(institucion))
+
     if domicilio:
         partes.append('con domicilio en ' + _frase_domicilio(domicilio))
     if colonia:
@@ -817,7 +855,7 @@ def construir_ubicacion(persona):
         if _primera_palabra(institucion) in ('en', 'dentro', 'al', 'a'):
             partes.append('ubicado ' + institucion)
         else:
-            partes.append('ubicado en ' + institucion)
+            partes.append('ubicado en ' + _con_articulo(institucion))
         if domicilio:
             partes.append('con domicilio en ' + _frase_domicilio(domicilio))
     elif domicilio:
@@ -911,7 +949,12 @@ def generar_comisiones_word(df_comisiones, tipo_comision, oficio_inicial, fecha_
             reemplazos.update({
                 '<<UBICACION>>': construir_ubicacion(persona),
                 '<<SEDE>>': construir_sede(persona, tipo_comision),
-                '<<DIRECCION>>': construir_direccion(persona),
+                '<<DIRECCION>>': construir_direccion(persona, tipo_comision),
+                # Cargo por persona. Si la columna 'cargo' del Sheet viene
+                # vacía se usa el cargo estándar, así solo hay que capturar
+                # las excepciones (p. ej. personal administrativo).
+                '<<CARGO>>': (valor_limpio(persona, 'cargo')
+                              or 'Asesor Pedagógico de la Dirección de Formación Continua'),
                 '<<INSTITUCION>>': valor_limpio(persona, 'institucion'),
                 '<<CENTRO_MAESTROS>>': valor_limpio(persona, 'centro_maestros'),
                 '<<DOMICILIO>>': valor_limpio(persona, 'domicilio'),
