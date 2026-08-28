@@ -2118,7 +2118,7 @@ with tab7:
         col1, col2, col3 = st.columns(3)
         
         with col1:
-            oficio_inicial = st.number_input("Número de Oficio Inicial", min_value=1, max_value=999, value=118)
+            oficio_inicial = st.number_input("Número de Oficio Inicial", min_value=1, max_value=9999, value=118)
         
         with col2:
             fecha_doc = st.date_input("Fecha del Documento", value=datetime.now())
