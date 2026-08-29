@@ -643,6 +643,7 @@ def convertir_word_a_pdf(word_path):
 # ══════════════════════════════════════════════════════════════════════════
 
 import re
+import unicodedata
 
 # Palabras con las que puede iniciar un domicilio y que YA indican el tipo de
 # vialidad: si el dato ya dice "Av. Vallarta", no anteponemos "calle".
@@ -664,15 +665,27 @@ _ASENTAMIENTOS = (
 _VACIOS = ('', 'nan', 'none', 'null', 'n/a', 'na', '-', '--', 'sin dato', 'sin datos')
 
 
-def valor_limpio(persona, columna):
-    """Devuelve el valor de una columna como texto limpio.
-
-    Regresa '' si la columna no existe, viene vacía, o trae NaN / 'nan' /
-    'N/A'. Esto evita que se imprima literalmente la palabra 'nan' en el
-    oficio, que era el otro error que aparecía.
+def _normaliza_clave(texto):
+    """'INSTITUCION', 'Institución', 'institucion ' -> 'institucion'.
+    Sirve para localizar una columna del Sheet sin importar mayúsculas,
+    acentos ni espacios. SIN esto, un encabezado escrito distinto hacía que
+    el dato desapareciera del oficio en silencio.
     """
+    t = unicodedata.normalize('NFD', str(texto))
+    t = ''.join(c for c in t if unicodedata.category(c) != 'Mn')
+    return t.strip().lower().replace(' ', '_')
+
+
+def valor_limpio(persona, columna):
+    """Valor de una columna como texto limpio, tolerando variantes del
+    encabezado. Regresa '' si no existe, viene vacía o trae NaN / 'nan'."""
+    objetivo = _normaliza_clave(columna)
+    valor = ''
     try:
-        valor = persona.get(columna, '')
+        for clave, dato in persona.items():
+            if _normaliza_clave(clave) == objetivo:
+                valor = dato
+                break
     except Exception:
         valor = ''
 
@@ -804,7 +817,9 @@ def construir_direccion(persona, tipo_comision=None):
     domicilio = valor_limpio(persona, 'domicilio')
     colonia = valor_limpio(persona, 'colonia')
     municipio = valor_limpio(persona, 'municipio')
-    cp = valor_limpio(persona, 'cp')
+    # El código postal aparece con varios encabezados según la hoja
+    cp = (valor_limpio(persona, 'cp') or valor_limpio(persona, 'codigo_postal')
+          or valor_limpio(persona, 'c.p.') or valor_limpio(persona, 'c_p'))
 
     partes = []
 
@@ -1115,7 +1130,37 @@ if not st.session_state['logged_in']:
                 
                 st.rerun()  
             else:
-                st.error("❌ Usuario o contraseña incorrectos")
+                # No es admin/visor: intentar autenticación de Responsable CM
+                # contra la hoja Asesores_CM. Esta lógica estaba en un bloque
+                # suelto más abajo que nunca se alcanzaba, así que los
+                # responsables de Centro de Maestros no podían entrar.
+                autenticado_cm = False
+                try:
+                    client = conectar_sheets()
+                    if client:
+                        spreadsheet = client.open("Dias_Economicos_Formacion_Continua")
+                        df_asesores_cm = pd.DataFrame(
+                            spreadsheet.worksheet("Asesores_CM").get_all_records(numericise_ignore=['all'])
+                        )
+                        responsable = df_asesores_cm[
+                            (df_asesores_cm['ROL'] == 'RESPONSABLE CM') &
+                            (df_asesores_cm['CORREO_INSTITUCIONAL'] == usuario) &
+                            (df_asesores_cm['CONTRASEÑA'].astype(str) == password)
+                        ]
+                        if len(responsable) > 0:
+                            st.session_state['logged_in'] = True
+                            st.session_state['tipo_usuario'] = 'responsable_cm'
+                            st.session_state['responsable_cm_auth'] = True
+                            st.session_state['centro_maestros'] = responsable.iloc[0]['CENTRO_MAESTROS']
+                            st.session_state['nombre_usuario'] = responsable.iloc[0]['NOMBRE_COMPLETO']
+                            autenticado_cm = True
+                except Exception:
+                    autenticado_cm = False
+
+                if autenticado_cm:
+                    st.rerun()
+                else:
+                    st.error("❌ Usuario o contraseña incorrectos")
     st.stop()
 
 # ============= VISORES (SOLO LECTURA) =============
@@ -1229,47 +1274,6 @@ elif tipo_usuario == 'visor_secretarias':
     st.dataframe(df_vista, use_container_width=True, hide_index=True)
     st.stop()
     
-if st.button("Ingresar", use_container_width=True, type="primary"):
-            # Primero verificar si es usuario admin/visor normal
-            valido, nombre, tipo = verificar_login(usuario, password)
-            
-            if valido:
-                st.session_state['logged_in'] = True
-                st.session_state['usuario'] = usuario
-                st.session_state['nombre_usuario'] = nombre
-                st.session_state['tipo_usuario'] = tipo
-                
-                fechas_limite_login = verificar_fechas_limite()
-                if fechas_limite_login['criticas']:
-                    st.session_state['mostrar_alerta_login'] = True
-                    st.session_state['alertas_criticas'] = fechas_limite_login['criticas']
-                
-                st.rerun()
-            else:
-                # Si no es usuario normal, intentar autenticación CM
-                client = conectar_sheets()
-                if client:
-                    spreadsheet = client.open("Dias_Economicos_Formacion_Continua")
-                    df_asesores_cm = pd.DataFrame(spreadsheet.worksheet("Asesores_CM").get_all_records(numericise_ignore=['all']))
-                    
-                    responsable = df_asesores_cm[
-                        (df_asesores_cm['ROL'] == 'RESPONSABLE CM') &
-                        (df_asesores_cm['CORREO_INSTITUCIONAL'] == usuario) &
-                        (df_asesores_cm['CONTRASEÑA'].astype(str) == password)
-                    ]
-                    
-                    if len(responsable) > 0:
-                        st.session_state['logged_in'] = True
-                        st.session_state['tipo_usuario'] = 'responsable_cm'
-                        st.session_state['responsable_cm_auth'] = True
-                        st.session_state['centro_maestros'] = responsable.iloc[0]['CENTRO_MAESTROS']
-                        st.session_state['nombre_usuario'] = responsable.iloc[0]['NOMBRE_COMPLETO']
-                        st.rerun()
-                    else:
-                        st.error("❌ Usuario o contraseña incorrectos")
-                else:
-                    st.error("❌ Usuario o contraseña incorrectos")  
-
 # Si es admin, continúa con la app normal
 # ============= MAIN APP =============
 st.title("📅 Sistema de Gestión de RH DFC")
